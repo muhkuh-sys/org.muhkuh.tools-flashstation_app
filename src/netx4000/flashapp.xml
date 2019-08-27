@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<HBootImage type="REGULAR">
+	<Chunks>
+		<!-- Set the DDR parameter. -->
+		<Snip artifact="DDR3_IS43TR16256AL-125KBLI_netX4000_NXHX4000_R1_600MHz_NOECC" group="com.hilscher.comp.ddr3" version="1.0.1"/>
+		<!-- Activate the DDR. -->
+		<MemoryDeviceUp device="MEMDEV_DDR"/>
+
+		<!-- Load Programm for CR7 and start afterwards -->
+		<Data>
+			<File name="@tElfCR7" />
+		</Data>
+		<Execute>
+			<File name="@tElfCR7" />
+		</Execute>
+
+		<!-- Keep the last relevant chunk at least 512 bytes away from the end of the file. -->
+		<Skip relative="512" />
+	</Chunks>
+</HBootImage>
+
