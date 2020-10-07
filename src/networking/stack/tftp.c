@@ -66,7 +66,7 @@ static char acBlockSize[6];
 static size_t sizBlockSizeLen;
 static unsigned long ulLoadedBytes;
 static unsigned char *pucDstBuffer;
-static unsigned char aucHash[48];
+static unsigned long aulHash[48/sizeof(unsigned long)];
 
 
 static const char acOctet[6] =
@@ -297,7 +297,7 @@ static void tftp_recHandler(void *pvData, size_t sizTftpLength, void *pvUser __a
 					tftp_cleanup();
 
 					/* Finalize the SHA384 sum. */
-					sha384_finalize_byte(aucHash, 12U, ulLoadedBytes);
+					sha384_finalize_byte(aulHash, 12U, ulLoadedBytes);
 				}
 			}
 			else
@@ -513,5 +513,5 @@ unsigned long tftp_getLoadedBytes(void)
 
 unsigned long *tftp_getHash(void)
 {
-	return aucHash;
+	return aulHash;
 }
