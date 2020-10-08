@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jonchki-artifact version="1.0">
+	<info group="org.muhkuh.tools"
+	      module="flash_app"
+	      artifact="flash_app"
+	      version="0.0.1"
+	      vcs-id="unknown"
+	      extension="zip">
+		<license name="GPL-2.0"/>
+		<author name="Flasher team" url="https://github.com/muhkuh-sys/org.muhkuh.tools-flasher_pt" />
+		<description>
+			The flasher app for the flash station.
+		</description>
+	</info>
+	<dependencies>
+		<build-dependency group="org.muhkuh.tools" module="flasher_pt" artifact="flasher" version="1.6.4"/>
+	</dependencies>
+</jonchki-artifact>

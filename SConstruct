@@ -89,13 +89,14 @@ atEnv.DEFAULT.Version('targets/version/version.h', 'templates/version.h')
 #
 # Create the compiler environments.
 #
-astrCommonIncludePaths = ['src', '#flasher_lib/includes', '#platform/src', '#platform/src/lib', 'targets/version']
+astrCommonIncludePaths = ['src', '#targets/build_requirements/jonchki/install/lib/includes', '#platform/src', '#platform/src/lib', 'targets/version']
 
 tEnv_netx4000 = atEnv.NETX4000.Clone()
 tEnv_netx4000.Replace(LDFILE = File('src/netx4000/netx4000.ld'))
 tEnv_netx4000.Append(CPPPATH = astrCommonIncludePaths)
+tEnv_netx4000.Append(CPPDEFINES = [['CFG_INCLUDE_SHA1', '0'], ['CFG_INCLUDE_PARFLASH', '0'], ['CFG_INCLUDE_SDIO', '1']])
 
-tLib_netx4000 = File('flasher_lib/libflasher_netx4000.a')
+tLib_netx4000 = File('#targets/build_requirements/jonchki/install/lib/libflasher_netx4000.a')
 tSrc_netx4000 = tEnv_netx4000.SetBuildPath('targets/netx4000', 'src', flashapp_sources)
 tElf_netx4000 = tEnv_netx4000.Elf('targets/netx4000/flashapp.elf', tSrc_netx4000 + [tLib_netx4000] + tEnv_netx4000['PLATFORM_LIBRARY'])
 tTxt_netx4000 = tEnv_netx4000.ObjDump('targets/netx4000/flashapp_netx4000.txt', tElf_netx4000, OBJDUMP_FLAGS=['--disassemble', '--source', '--all-headers', '--wide'])
