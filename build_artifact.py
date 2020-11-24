@@ -1,13 +1,10 @@
-#! /usr/bin/python2.7
+#! /usr/bin/python3
 
-from jonchki import filter
 from jonchki import jonchkihere
-from jonchki import vcs_id
 
 import os
 import subprocess
 import sys
-import xml.etree.ElementTree
 
 # --------------------------------------------------------------------------
 # -
@@ -30,7 +27,7 @@ strCfg_jonchkiHerePath = os.path.join(
     'jonchki'
 )
 # This is the Jonchki version to use.
-strCfg_jonchkiVersion = '0.0.5.1'
+strCfg_jonchkiVersion = '0.0.6.1'
 
 # This is ther verbose level. It can be one of the strings 'debug', 'info',
 # 'warning', 'error' or 'fatal'.
@@ -50,6 +47,10 @@ strCfg_jonchkiInstallationFolder = os.path.join(
     'targets'
 )
 
+strCfg_jonchkiLog = os.path.join(
+    strCfg_workingFolder,
+    'jonchki.log'
+)
 strCfg_jonchkiSystemConfiguration = os.path.join(
     strCfg_projectFolder,
     'jonchki',
@@ -60,16 +61,20 @@ strCfg_jonchkiProjectConfiguration = os.path.join(
     'jonchki',
     'jonchkicfg.xml'
 )
-strCfg_jonchkiArtifactConfiguration = os.path.join(
-    strCfg_projectFolder,
-    'jonchki',
-    'flash_app.xml'
-)
 # Get the full path to the finalizer.
 strCfg_jonchkiFinalizer = os.path.join(
     strCfg_projectFolder,
     'jonchki',
     'finalizer.lua'
+)
+strCfg_jonchkiDependencyLog = os.path.join(
+    strCfg_projectFolder,
+    'dependency-log.xml'
+)
+strCfg_jonchkiArtifactConfiguration = os.path.join(
+    strCfg_projectFolder,
+    'jonchki',
+    'flash_app.xml'
 )
 
 # -
@@ -90,13 +95,6 @@ strJonchki = jonchkihere.install(
     strCfg_jonchkiInstallationFolder,
     LOCAL_ARCHIVES=strCfg_jonchkiLocalArchives
 )
-
-# Try to get the VCS ID.
-strProjectVersionVcs, strProjectVersionVcsLong = vcs_id.get(
-    strCfg_projectFolder
-)
-print(strProjectVersionVcs, strProjectVersionVcsLong)
-
 
 # ---------------------------------------------------------------------------
 #
