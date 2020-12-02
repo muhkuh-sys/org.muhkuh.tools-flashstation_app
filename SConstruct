@@ -101,3 +101,25 @@ tSrc_netx4000 = tEnv_netx4000.SetBuildPath('targets/netx4000', 'src', flashapp_s
 tElf_netx4000 = tEnv_netx4000.Elf('targets/netx4000/flashapp.elf', tSrc_netx4000 + [tLib_netx4000] + tEnv_netx4000['PLATFORM_LIBRARY'])
 tTxt_netx4000 = tEnv_netx4000.ObjDump('targets/netx4000/flashapp_netx4000.txt', tElf_netx4000, OBJDUMP_FLAGS=['--disassemble', '--source', '--all-headers', '--wide'])
 tImg_netx4000 = tEnv_netx4000.HBootImage('targets/netx4000/flashapp_netx4000.img', 'src/netx4000/flashapp.xml', HBOOTIMAGE_KNOWN_FILES=dict({'tElfCR7': tElf_netx4000}))
+
+
+#----------------------------------------------------------------------------
+#
+# Build the artifacts.
+#
+strGroup = PROJECT_GROUP
+strModule = PROJECT_MODULE
+
+# Split the group by dots.
+aGroup = strGroup.split('.')
+# Build the path for all artifacts.
+strModulePath = 'targets/jonchki/repository/%s/%s/%s' % ('/'.join(aGroup), strModule, PROJECT_VERSION)
+
+# Set the name of the artifact.
+strArtifact0 = 'flashstation_app'
+
+tArcList0 = atEnv.DEFAULT.ArchiveList('zip')
+tArcList0.AddFiles('netx/',
+    tImg_netx4000)
+
+tArtifact0 = atEnv.DEFAULT.Archive(os.path.join(strModulePath, '%s-%s.zip' % (strArtifact0, PROJECT_VERSION)), None, ARCHIVE_CONTENTS = tArcList0)
