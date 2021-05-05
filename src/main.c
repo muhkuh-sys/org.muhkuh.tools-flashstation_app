@@ -2,6 +2,8 @@
 #include <string.h>
 
 #include "blinki_codes.h"
+#include "crc32.h"
+#include "fdl.h"
 #include "netx_io_areas.h"
 #include "options.h"
 #include "rdy_run.h"
@@ -11,6 +13,7 @@
 #include "uprintf.h"
 #include "version.h"
 
+#if 0
 #include "networking/driver/drv_eth_xc.h"
 #include "networking/stack/arp.h"
 #include "networking/stack/buckets.h"
@@ -20,6 +23,7 @@
 #include "networking/stack/ipv4.h"
 #include "networking/stack/tftp.h"
 #include "networking/stack/udp.h"
+#endif
 
 #include "flasher_interface.h"
 #include "flasher_spi.h"
@@ -28,11 +32,120 @@
 
 /*-------------------------------------------------------------------------*/
 
+#define FLASH_BUFFER_SIZE 16384
+static union FLASH_BUFFER_UNION
+{
+	unsigned char auc[FLASH_BUFFER_SIZE];
+	char ac[FLASH_BUFFER_SIZE];
+} tFlashBuffer;
 
-static TIMER_HANDLE_T tEthernetTimer;
+
+typedef struct DEVICE_INFO_STRUCT
+{
+	unsigned long ulDeviceNr;
+	unsigned long ulHwRev;
+	unsigned long ulSerial;
+} DEVICE_INFO_T;
+
+/*-------------------------------------------------------------------------*/
+
+static int readFDL(DEVICE_INFO_T *ptDeviceInfo)
+{
+	int iResult;
+	unsigned long ulOffset;
+	unsigned long ulCrc;
+	unsigned long ulDeviceNr;
+	unsigned char ucHwRev;
+	unsigned long ulSerial;
+	NETX_CONSOLEAPP_RESULT_T tResult;
+	DEVICE_DESCRIPTION_T tDeviceDesc;
+	FLASHER_SPI_CONFIGURATION_T tSpiConfig;
+	FDL_BUFFER_T tBuf;
+
+
+	iResult = -1;
+
+	ulOffset = 0xff0000;
+
+	/* Detect a flash connected to SPI unit 0, chip select 0. */
+	tSpiConfig.uiUnit = 0;
+	tSpiConfig.uiChipSelect = 0;
+	tSpiConfig.ulInitialSpeedKhz = 1000;
+	tSpiConfig.ulMaximumSpeedKhz = 25000;
+	tSpiConfig.uiIdleCfg = MSK_SQI_CFG_IDLE_IO1_OE | MSK_SQI_CFG_IDLE_IO1_OUT | MSK_SQI_CFG_IDLE_IO2_OE | MSK_SQI_CFG_IDLE_IO2_OUT | MSK_SQI_CFG_IDLE_IO3_OE | MSK_SQI_CFG_IDLE_IO3_OUT;
+	tSpiConfig.uiMode = 3;
+	tSpiConfig.aucMmio[0] = 0xffU;
+	tSpiConfig.aucMmio[1] = 0xffU;
+	tSpiConfig.aucMmio[2] = 0xffU;
+	tSpiConfig.aucMmio[3] = 0xffU;
+	tResult = spi_detect(&tSpiConfig, &(tDeviceDesc.uInfo.tSpiInfo), tFlashBuffer.ac+FLASH_BUFFER_SIZE);
+	if( tResult!=NETX_CONSOLEAPP_RESULT_OK )
+	{
+		uprintf("Failed to detect the SPI flash.\n");
+	}
+	else
+	{
+		/* Read the FDL. */
+		tResult = spi_read(&(tDeviceDesc.uInfo.tSpiInfo), ulOffset, ulOffset+sizeof(FDL_T), tBuf.auc);
+		if( tResult!=NETX_CONSOLEAPP_RESULT_OK )
+		{
+			uprintf("Failed to read the FDL.\n");
+		}
+		else
+		{
+			/* Is this a valid FDL? */
+			if( memcmp("ProductData>", tBuf.t.tHeader.acStartToken, 12)!=0 )
+			{
+				uprintf("FDL: Missing start token.\n");
+			}
+			else if( memcmp("<ProductData", tBuf.t.tFooter.acEndLabel, 12)!=0 )
+			{
+				uprintf("FDL: Missing end token.\n");
+			}
+			else if( tBuf.t.tHeader.usLabelSize!=(tBuf.t.tHeader.usContentSize+sizeof(FDL_HEADER_T)+sizeof(FDL_FOOTER_T)) )
+			{
+				uprintf("FDL: the complete size is not the header+data+footer.\n");
+			}
+			else if( sizeof(FDL_T)<tBuf.t.tHeader.usLabelSize )
+			{
+				uprintf("FDL: the size in the header exceeds the available data.\n");
+			}
+			else
+			{
+				ulCrc = crc_gen_crc32b(tBuf.t.tData.auc, tBuf.t.tHeader.usContentSize);
+				if( ulCrc!=tBuf.t.tFooter.ulChecksum )
+				{
+					uprintf("FDL: the checksum does not match.\n");
+				}
+				else
+				{
+					ulDeviceNr = tBuf.t.tData.t.tBasicDeviceData.ulDeviceNumber;
+					ucHwRev = tBuf.t.tData.t.tBasicDeviceData.ucHardwareRevisionNumber;
+					ulSerial = tBuf.t.tData.t.tBasicDeviceData.ulSerialNumber;
+
+					ptDeviceInfo->ulDeviceNr = ulDeviceNr;
+					ptDeviceInfo->ulHwRev = ucHwRev;
+					ptDeviceInfo->ulSerial = ulSerial;
+
+					iResult = 0;
+				}
+			}
+		}
+	}
+
+	return iResult;
+}
+
+
+/*-------------------------------------------------------------------------*/
+
+
+
+//static TIMER_HANDLE_T tEthernetTimer;
 
 typedef int (*PFN_ROM_TFTP_SEND_ACK_T) (void);
 
+#if 0
 /* Send an ACK for the last TFTP packet. */
 static int ackLastRomcodePacket(void)
 {
@@ -712,7 +825,7 @@ static int processWfp(unsigned char *pucWfpImage, unsigned long ulWfpDataSizeInB
 
 	return iResult;
 }
-
+#endif
 
 /*-------------------------------------------------------------------------*/
 
@@ -725,7 +838,8 @@ void flashapp_main(void)
 {
 	BLINKI_HANDLE_T tBlinkiHandle;
 	int iResult;
-	unsigned char *pucWfpImage;
+//	unsigned char *pucWfpImage;
+	DEVICE_INFO_T tDeviceInfo;
 
 
 	systime_init();
@@ -737,9 +851,41 @@ void flashapp_main(void)
 
 	/* Switch all LEDs off. */
 	rdy_run_setLEDs(RDYRUN_OFF);
-#if 1
+
+	/* The final application will be downloaded and started by the netX4000
+	 * ROM code. The ROM has the limitation that it does not know when a boot
+	 * image is finished. It is possible that the image continues after a code
+	 * is started. This is a common use case in HWC and MWC files.
+	 * That's why the TFTP connection for the application download is not
+	 * closed when this code is executed. As the flasher app does not return
+	 * to the ROM code, we should close the connection here, or the TFTP
+	 * server will keep retrying for a while.
+	 *
+	 * The ACK should be masked out if the application is started by a JTAG
+	 * debugger.
+	 */
+
+#if 0
 	/* Send the last ACK packet for the ROM transfer. */
 	iResult = ackLastRomcodePacket();
+#else
+	/* This should be used with a JTAG debugger. */
+	iResult = 0;
+#endif
+
+	if( iResult==0 )
+	{
+		/* Read the FDL structure and extract the device number, the hardware
+		* revision and the serial. This will be used for all log messages and
+		* to determine the image to flash.
+		*/
+		iResult = readFDL(&tDeviceInfo);
+		if( iResult==0 )
+		{
+			uprintf("Found a valid FDL for %dR%dSN%d.\n", tDeviceInfo.ulDeviceNr, tDeviceInfo.ulHwRev, tDeviceInfo.ulSerial);
+		}
+	}
+#if 0
 	if( iResult!=0 )
 	{
 		uprintf("Failed to acknowledge the last ROM packet.\n");
@@ -787,18 +933,6 @@ void flashapp_main(void)
 				uprintf("Failed to read the device info file.\n");
 			}
 		}
-	}
-#else
-	pucWfpImage = (unsigned char*)0x04020000U;
-	ulDataFileSize = 587517;
-	iResult = processWfp(pucWfpImage, ulDataFileSize);
-	if( iResult==0 )
-	{
-		uprintf("Flashed the complete WFP.\n");
-	}
-	else
-	{
-		uprintf("Failed to flash the WFP.\n");
 	}
 #endif
 

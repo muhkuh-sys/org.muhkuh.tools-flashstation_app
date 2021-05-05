@@ -41,6 +41,7 @@ SConscript('platform/SConscript')
 # This is the list of sources. The elements must be separated with whitespace
 # (i.e. spaces, tabs, newlines). The amount of whitespace does not matter.
 flashapp_sources = """
+	src/crc32.c
 	src/main.c
 	src/init.S
 	src/options.c
@@ -77,6 +78,39 @@ flashapp_sources = """
 	src/networking/stack/udp.c
 """
 
+sources_lwip = """
+	src/networking/lwip-2.1.2/src/apps/http/http_client.c
+
+	src/networking/lwip-2.1.2/src/core/ipv4/autoip.c
+	src/networking/lwip-2.1.2/src/core/ipv4/dhcp.c
+	src/networking/lwip-2.1.2/src/core/ipv4/etharp.c
+	src/networking/lwip-2.1.2/src/core/ipv4/icmp.c
+	src/networking/lwip-2.1.2/src/core/ipv4/igmp.c
+	src/networking/lwip-2.1.2/src/core/ipv4/ip4_addr.c
+	src/networking/lwip-2.1.2/src/core/ipv4/ip4_frag.c
+	src/networking/lwip-2.1.2/src/core/ipv4/ip4.c
+	src/networking/lwip-2.1.2/src/core/altcp_alloc.c
+	src/networking/lwip-2.1.2/src/core/altcp_tcp.c
+	src/networking/lwip-2.1.2/src/core/altcp.c
+	src/networking/lwip-2.1.2/src/core/def.c
+	src/networking/lwip-2.1.2/src/core/dns.c
+	src/networking/lwip-2.1.2/src/core/inet_chksum.c
+	src/networking/lwip-2.1.2/src/core/init.c
+	src/networking/lwip-2.1.2/src/core/ip.c
+	src/networking/lwip-2.1.2/src/core/mem.c
+	src/networking/lwip-2.1.2/src/core/memp.c
+	src/networking/lwip-2.1.2/src/core/netif.c
+	src/networking/lwip-2.1.2/src/core/pbuf.c
+	src/networking/lwip-2.1.2/src/core/raw.c
+	src/networking/lwip-2.1.2/src/core/stats.c
+	src/networking/lwip-2.1.2/src/core/sys.c
+	src/networking/lwip-2.1.2/src/core/tcp_in.c
+	src/networking/lwip-2.1.2/src/core/tcp_out.c
+	src/networking/lwip-2.1.2/src/core/tcp.c
+	src/networking/lwip-2.1.2/src/core/timeouts.c
+	src/networking/lwip-2.1.2/src/core/udp.c
+	src/networking/lwip-2.1.2/src/netif/ethernet.c
+"""
 
 #----------------------------------------------------------------------------
 #
