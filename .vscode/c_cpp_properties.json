@@ -1,0 +1,11 @@
+{
+    "configurations": [
+        {
+            "name": "NETX4000",
+            "cStandard": "c11",
+            "cppStandard": "c++14",
+            "compileCommands": "${workspaceFolder}/targets/netx4000/compile_commands.json"
+        }
+    ],
+    "version": 4
+}
