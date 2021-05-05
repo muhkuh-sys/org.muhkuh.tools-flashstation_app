@@ -66,16 +66,6 @@ flashapp_sources = """
 	src/networking/driver/xpec_clean_tpec1.c
 	src/networking/driver/xpec_clean_tpec2.c
 	src/networking/driver/xpec_clean_tpec3.c
-	src/networking/stack/arp.c
-	src/networking/stack/buckets.c
-	src/networking/stack/checksum.c
-	src/networking/stack/dhcp.c
-	src/networking/stack/dns.c
-	src/networking/stack/eth.c
-	src/networking/stack/icmp.c
-	src/networking/stack/ipv4.c
-	src/networking/stack/tftp.c
-	src/networking/stack/udp.c
 """
 
 sources_lwip = """
@@ -123,7 +113,14 @@ atEnv.DEFAULT.Version('targets/version/version.h', 'templates/version.h')
 #
 # Create the compiler environments.
 #
-astrCommonIncludePaths = ['src', '#targets/build_requirements/jonchki/install/lib/includes', '#platform/src', '#platform/src/lib', 'targets/version']
+astrCommonIncludePaths = [
+	'src',
+	'src/networking/lwip-2.1.2/src/include',
+	'#targets/build_requirements/jonchki/install/lib/includes',
+	'#platform/src',
+	'#platform/src/lib',
+	'targets/version'
+]
 
 tEnv_netx4000 = atEnv.NETX4000.Clone()
 tEnv_netx4000.CompileDb('targets/netx4000/compile_commands.json')
@@ -132,7 +129,7 @@ tEnv_netx4000.Append(CPPPATH = astrCommonIncludePaths)
 tEnv_netx4000.Append(CPPDEFINES = [['CFG_INCLUDE_SHA1', '0'], ['CFG_INCLUDE_PARFLASH', '0'], ['CFG_INCLUDE_SDIO', '1']])
 
 tLib_netx4000 = File('#targets/build_requirements/jonchki/install/lib/libflasher_netx4000.a')
-tSrc_netx4000 = tEnv_netx4000.SetBuildPath('targets/netx4000', 'src', flashapp_sources)
+tSrc_netx4000 = tEnv_netx4000.SetBuildPath('targets/netx4000', 'src', flashapp_sources + sources_lwip)
 tElf_netx4000 = tEnv_netx4000.Elf('targets/netx4000/flashapp.elf', tSrc_netx4000 + [tLib_netx4000] + tEnv_netx4000['PLATFORM_LIBRARY'])
 tTxt_netx4000 = tEnv_netx4000.ObjDump('targets/netx4000/flashapp_netx4000.txt', tElf_netx4000, OBJDUMP_FLAGS=['--disassemble', '--source', '--all-headers', '--wide'])
 tImg_netx4000 = tEnv_netx4000.HBootImage('targets/netx4000/flashapp_netx4000.img', 'src/netx4000/flashapp.xml', HBOOTIMAGE_KNOWN_FILES=dict({'tElfCR7': tElf_netx4000}))

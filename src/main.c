@@ -140,6 +140,201 @@ static int readFDL(DEVICE_INFO_T *ptDeviceInfo)
 /*-------------------------------------------------------------------------*/
 
 
+#define ETHERNET_MAXIMUM_FRAMELENGTH                    1518
+
+#include "lwip/etharp.h"
+#include "lwip/init.h"
+#include "lwip/ip_addr.h"
+#include "lwip/netif.h"
+#include "lwip/tcp.h"
+#include "lwip/timeouts.h"
+
+#include "networking/network_interface.h"
+#include "networking/driver/drv_eth_xc.h"
+
+
+typedef struct NETWORK_DEVICE_STATE_STRUCT
+{
+	ip4_addr_t tIpAddr;
+	ip4_addr_t tNetmask;
+	ip4_addr_t tGateway;
+	unsigned char aucMAC[6];
+
+	const NETWORK_IF_T *ptNetworkIf;
+
+	struct netif tNetIf;
+} NETWORK_DEVICE_STATE_T;
+
+
+static NETWORK_DEVICE_STATE_T tNetworkDeviceState;
+
+
+static err_t netif_output(struct netif *ptNetIf, struct pbuf *ptPBuf)
+{
+	NETWORK_DEVICE_STATE_T *ptState;
+	err_t tResult;
+	void *pvFrame;
+
+
+	/* Get the pointer to the interface. */
+	tResult = ERR_VAL;
+	ptState = (NETWORK_DEVICE_STATE_T*)(ptNetIf->state);
+	if( ptState!=NULL )
+	{
+		pvFrame = ptState->ptNetworkIf->pfnGetEmptyPacket(NULL);
+		if( pvFrame==NULL )
+		{
+			tResult = ERR_BUF;
+		}
+		else
+		{
+			pbuf_copy_partial(ptPBuf, pvFrame, ptPBuf->tot_len, 0);
+			ptState->ptNetworkIf->pfnSendPacket(pvFrame, ptPBuf->tot_len, NULL);
+			tResult = ERR_OK;
+		}
+	}
+
+	return tResult;
+}
+
+
+
+static err_t initialize_interface(struct netif *ptNetIf)
+{
+	NETWORK_DEVICE_STATE_T *ptState;
+
+
+	ptState = (NETWORK_DEVICE_STATE_T*)(ptNetIf->state);
+
+	ptNetIf->linkoutput = netif_output;
+	ptNetIf->output     = etharp_output;
+	ptNetIf->mtu        = ETHERNET_MAXIMUM_FRAMELENGTH;
+	ptNetIf->flags      = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET | NETIF_FLAG_IGMP | NETIF_FLAG_MLD6;
+
+	SMEMCPY(ptNetIf->hwaddr, ptState->aucMAC, sizeof(ptNetIf->hwaddr));
+	ptNetIf->hwaddr_len = sizeof(ptNetIf->hwaddr);
+
+	return ERR_OK;
+}
+
+
+
+static void setupNetwork(void)
+{
+	const ETHERNET_CONFIGURATION_T *ptRomEthernetConfiguration = (const ETHERNET_CONFIGURATION_T*)0x00024a88U;
+	unsigned long ulGw;
+	unsigned long ulIp;
+	unsigned long ulNm;
+	void *pvUser;
+	struct netif *ptNetIf;
+	const NETWORK_IF_T *ptNetworkIf;
+
+
+	ptNetworkIf = drv_eth_xc_initialize(0);
+	if( ptNetworkIf!=NULL )
+	{
+		ulGw = ptRomEthernetConfiguration->ulGatewayIp;
+		ulIp = ptRomEthernetConfiguration->ulIp;
+		ulNm = ptRomEthernetConfiguration->ulNetmask;
+
+		uprintf("IP: %d.%d.%d.%d\n",
+			ulIp&0xff,
+			(ulIp>> 8U) & 0xffU,
+			(ulIp>>16U) & 0xffU,
+			(ulIp>>24U) & 0xffU
+		);
+		uprintf("NM: %d.%d.%d.%d\n",
+			ulNm&0xff,
+			(ulNm>> 8U) & 0xffU,
+			(ulNm>>16U) & 0xffU,
+			(ulNm>>24U) & 0xffU
+		);
+		uprintf("GW: %d.%d.%d.%d\n",
+			ulGw&0xff,
+			(ulGw>> 8U) & 0xffU,
+			(ulGw>>16U) & 0xffU,
+			(ulGw>>24U) & 0xffU
+		);
+		hexdump(ptRomEthernetConfiguration->aucMac, 6);
+
+		IP4_ADDR(&(tNetworkDeviceState.tIpAddr),  ulIp&0xff, (ulIp>> 8U) & 0xffU, (ulIp>>16U) & 0xffU, (ulIp>>24U) & 0xffU);
+		IP4_ADDR(&(tNetworkDeviceState.tGateway), ulGw&0xff, (ulGw>> 8U) & 0xffU, (ulGw>>16U) & 0xffU, (ulGw>>24U) & 0xffU);
+		IP4_ADDR(&(tNetworkDeviceState.tNetmask), ulNm&0xff, (ulNm>> 8U) & 0xffU, (ulNm>>16U) & 0xffU, (ulNm>>24U) & 0xffU);
+		memcpy(tNetworkDeviceState.aucMAC, ptRomEthernetConfiguration->aucMac, 6);
+
+		tNetworkDeviceState.ptNetworkIf = ptNetworkIf;
+
+		lwip_init();
+
+		ptNetIf = &(tNetworkDeviceState.tNetIf);
+		pvUser = (void*)&tNetworkDeviceState;
+		netif_add(ptNetIf, &(tNetworkDeviceState.tIpAddr), &(tNetworkDeviceState.tNetmask), &(tNetworkDeviceState.tGateway), pvUser, initialize_interface, netif_input);
+		ptNetIf->name[0] = 'e';
+		ptNetIf->name[1] = '0';
+
+		netif_set_default(ptNetIf);
+		netif_set_up(ptNetIf);
+	}
+}
+
+
+
+static void network_cyclic_process(void)
+{
+	struct netif *ptNetIf;
+	const NETWORK_IF_T *ptNetworkIf;
+	unsigned int uiLinkState;
+	void *pvFrame;
+	unsigned int sizFrame;
+	unsigned short usPacketSize;
+	struct pbuf *ptPBuf;
+	err_t tResult;
+
+
+	ptNetIf = &(tNetworkDeviceState.tNetIf);
+	ptNetworkIf = tNetworkDeviceState.ptNetworkIf;
+
+	uiLinkState = ptNetworkIf->pfnGetLinkStatus(NULL);
+	if( uiLinkState==0 )
+	{
+		/* TODO: Move to an error state. */
+		uprintf("The link is down.\n");
+		netif_set_link_down(ptNetIf);
+	}
+	else
+	{
+		/* Check for received frames, feed them to lwIP */
+		pvFrame = ptNetworkIf->pfnGetReceivedPacket(&sizFrame, NULL);
+		if( pvFrame!=NULL )
+		{
+			/* Allocate a buffer from the pool. */
+			usPacketSize = (unsigned short)(sizFrame);
+			ptPBuf = pbuf_alloc(PBUF_RAW, usPacketSize, PBUF_POOL);
+			if( ptPBuf==NULL )
+			{
+				ptNetworkIf->pfnReleasePacket(pvFrame, NULL);
+			}
+			else
+			{
+				/* Copy the Ethernet frame into the buffer. */
+				pbuf_take(ptPBuf, pvFrame, usPacketSize);
+
+				ptNetworkIf->pfnReleasePacket(pvFrame, NULL);
+
+				tResult = ptNetIf->input(ptPBuf, ptNetIf);
+				if( tResult!=ERR_OK)
+				{
+					pbuf_free(ptPBuf);
+				}
+			}
+		}
+	}
+
+	/* Cyclic lwIP timers check */
+	sys_check_timeouts();
+}
+
+
 
 //static TIMER_HANDLE_T tEthernetTimer;
 
@@ -883,6 +1078,12 @@ void flashapp_main(void)
 		if( iResult==0 )
 		{
 			uprintf("Found a valid FDL for %dR%dSN%d.\n", tDeviceInfo.ulDeviceNr, tDeviceInfo.ulHwRev, tDeviceInfo.ulSerial);
+
+			setupNetwork();
+			while(1)
+			{
+				network_cyclic_process();
+			}
 		}
 	}
 #if 0

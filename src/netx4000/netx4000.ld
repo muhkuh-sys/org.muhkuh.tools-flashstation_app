@@ -13,7 +13,6 @@ SECTIONS
 	{
 		/* NOTE: include all sections here which should be empty.
 		 */
-		*(.data)
 		*(.glue*)
 		*(.vfp11_veneer)
 		*(.v4_bx)
@@ -24,6 +23,7 @@ SECTIONS
 	{
 		KEEP(*(.init_code))
 		*(.text .rodata .rodata*)
+		*(.data)
 	} >CODE
 
 	.bss :
