@@ -92,6 +92,7 @@ atEnv.DEFAULT.Version('targets/version/version.h', 'templates/version.h')
 astrCommonIncludePaths = ['src', '#targets/build_requirements/jonchki/install/lib/includes', '#platform/src', '#platform/src/lib', 'targets/version']
 
 tEnv_netx4000 = atEnv.NETX4000.Clone()
+tEnv_netx4000.CompileDb('targets/netx4000/compile_commands.json')
 tEnv_netx4000.Replace(LDFILE = File('src/netx4000/netx4000.ld'))
 tEnv_netx4000.Append(CPPPATH = astrCommonIncludePaths)
 tEnv_netx4000.Append(CPPDEFINES = [['CFG_INCLUDE_SHA1', '0'], ['CFG_INCLUDE_PARFLASH', '0'], ['CFG_INCLUDE_SDIO', '1']])
