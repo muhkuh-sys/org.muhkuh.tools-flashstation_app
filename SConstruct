@@ -48,7 +48,6 @@ flashapp_sources = """
 	src/progress_bar.c
 	src/rng.c
 	src/sha384.c
-	src/snuprintf.c
 	src/networking/driver/drv_eth_xc.c
 	src/networking/driver/rpu_eth0.c
 	src/networking/driver/rpu_eth1.c

@@ -7,7 +7,6 @@
 #include "netx_io_areas.h"
 #include "options.h"
 #include "rdy_run.h"
-#include "snuprintf.h"
 #include "systime.h"
 #include "uart_standalone.h"
 #include "uprintf.h"
@@ -42,9 +41,15 @@ static union FLASH_BUFFER_UNION
 
 typedef struct DEVICE_INFO_STRUCT
 {
+	/* These fields are filled with data from the FDL.
+	 * They are necessary to retrieve the correct files from the server.
+	 */
 	unsigned long ulDeviceNr;
 	unsigned long ulHwRev;
 	unsigned long ulSerial;
+
+	char acFileNameData[1024];
+	unsigned char aucDataHash[48];
 } DEVICE_INFO_T;
 
 /*-------------------------------------------------------------------------*/
@@ -149,8 +154,25 @@ static int readFDL(DEVICE_INFO_T *ptDeviceInfo)
 #include "lwip/tcp.h"
 #include "lwip/timeouts.h"
 
+#include "lwip/apps/http_client.h"
+
 #include "networking/network_interface.h"
 #include "networking/driver/drv_eth_xc.h"
+
+
+typedef struct HTTP_DOWNLOAD_STATE_STRUCT
+{
+	unsigned char *pucStart;
+	unsigned char *pucCnt;
+	unsigned char *pucEnd;
+
+	httpc_result_fn pfnResult;
+	unsigned int fIsFinished;
+	httpc_result_t tHttpcResult;
+	u32_t ulServerResponse;
+	err_t tResult;
+} HTTP_DOWNLOAD_STATE_T;
+
 
 
 typedef struct NETWORK_DEVICE_STATE_STRUCT
@@ -219,8 +241,9 @@ static err_t initialize_interface(struct netif *ptNetIf)
 
 
 
-static void setupNetwork(void)
+static int setupNetwork(void)
 {
+	int iResult;
 	const ETHERNET_CONFIGURATION_T *ptRomEthernetConfiguration = (const ETHERNET_CONFIGURATION_T*)0x00024a88U;
 	unsigned long ulGw;
 	unsigned long ulIp;
@@ -229,6 +252,8 @@ static void setupNetwork(void)
 	struct netif *ptNetIf;
 	const NETWORK_IF_T *ptNetworkIf;
 
+
+	iResult = -1;
 
 	ptNetworkIf = drv_eth_xc_initialize(0);
 	if( ptNetworkIf!=NULL )
@@ -274,7 +299,14 @@ static void setupNetwork(void)
 
 		netif_set_default(ptNetIf);
 		netif_set_up(ptNetIf);
+
+		/* The link is already up at this point. */
+		netif_set_link_up(ptNetIf);
+
+		iResult = 0;
 	}
+
+	return iResult;
 }
 
 
@@ -335,11 +367,6 @@ static void network_cyclic_process(void)
 }
 
 
-
-//static TIMER_HANDLE_T tEthernetTimer;
-
-typedef int (*PFN_ROM_TFTP_SEND_ACK_T) (void);
-
 #if 0
 /* Send an ACK for the last TFTP packet. */
 static int ackLastRomcodePacket(void)
@@ -361,309 +388,243 @@ static int ackLastRomcodePacket(void)
 
 	return iResult;
 }
+#endif
 
 
 
-static int initializeNetwork(void)
+static err_t httpDownloadDataCallback(void *pvUser, struct altcp_pcb *conn, struct pbuf *p, err_t err)
 {
-	int iResult;
-	const NETWORK_IF_T *ptNetworkIf;
-	const ETHERNET_CONFIGURATION_T *ptRomEthernetConfiguration = (const ETHERNET_CONFIGURATION_T*)0x00024a88U;
+	HTTP_DOWNLOAD_STATE_T *ptHttpState;
+	uint16_t sizChunk;
+	struct pbuf* ptBuf;
+	unsigned char *pucRec;
+	unsigned int sizBufLeft;
+	err_t tResult;
 
 
-	iResult = -1;
+	tResult = ERR_OK;
 
-	ptNetworkIf = drv_eth_xc_initialize(0);
-	if( ptNetworkIf!=NULL )
+	ptHttpState = (HTTP_DOWNLOAD_STATE_T*)pvUser;
+	if( ptHttpState!=NULL && p!=NULL && err==ERR_OK )
 	{
-		buckets_init();
+		/* Get the space left in the buffer in bytes. */
+		sizBufLeft = (unsigned int)(ptHttpState->pucEnd - ptHttpState->pucCnt);
 
-		eth_init(ptNetworkIf);
-		arp_init();
-		ipv4_init();
-		icmp_init();
-		udp_init();
-		tftp_init();
-		dhcp_init();
-		dns_init();
-
-		systime_handle_start_ms(&tEthernetTimer, 1000);
-
-		/* Copy the ROM Ethernet settings. */
-		memcpy(&(g_t_romloader_options.t_ethernet), ptRomEthernetConfiguration, sizeof(ETHERNET_CONFIGURATION_T));
-
-		iResult = 0;
-	}
-
-	return iResult;
-}
-
-
-
-static void ethernet_cyclic_process(void)
-{
-	eth_process_packet();
-
-	if( systime_handle_is_elapsed(&tEthernetTimer)!=0 )
-	{
-		/* process cyclic events here */
-		arp_timer();
-		tftp_timer();
-		dhcp_timer();
-		dns_timer();
-
-		systime_handle_start_ms(&tEthernetTimer, 1000);
-	}
-}
-
-
-
-static int tftp_load_file(const char *pcFileName, unsigned char *pucDataBuffer, unsigned char **ppucDataBufferEnd, unsigned char *pucHash)
-{
-	int iResult;
-	tTftpState tState;
-	unsigned char *pucDataStart;
-	unsigned char *pucDataEnd;
-	unsigned int uiCnt;
-	int iIsElapsed;
-	TIMER_HANDLE_T tProgress;
-	const unsigned char *pucTftpHash;
-
-
-	/* Process any waiting Ethernet packets to make some room. */
-	for(uiCnt=0; uiCnt<32; ++uiCnt)
-	{
-		ethernet_cyclic_process();
-	}
-
-	/* Open the TFTP connection. */
-	pucDataStart = pucDataBuffer;
-	iResult = tftp_open(pcFileName, pucDataStart, 1024);
-	if( iResult!=0 )
-	{
-		uprintf("Failed to open TFTP file.\n");
-	}
-	else
-	{
-		systime_handle_start_ms(&tProgress, 2000U);
-
-		do
+		/* Loop over all chunks in the received data. */
+		pucRec = ptHttpState->pucCnt;
+		ptBuf = p;
+		while( ptBuf!=NULL )
 		{
-			ethernet_cyclic_process();
-
-			tState = tftp_getState();
-			switch( tState )
+			sizChunk = p->len;
+			if( sizBufLeft>sizChunk )
 			{
-			case TFTPSTATE_Idle:
-				/* The TFTP layer should not be idle, there is an open connection. */
-				iResult = -1;
-				break;
-
-			case TFTPSTATE_Init:
-				/* Sending the "open" packet and acknowledge the options. */
-				break;
-
-			case TFTPSTATE_Transfer:
-				/* Transfering data... */
-				break;
-
-			case TFTPSTATE_Finished:
-				/* Finished to transfer the data. */
-				iResult = 1;
-				break;
-
-			case TFTPSTATE_Error:
-				/* Transfer failed. */
-				iResult = -1;
+				memcpy(pucRec, ptBuf->payload, sizChunk);
+				pucRec += sizChunk;
+				sizBufLeft -= sizChunk;
+			}
+			else
+			{
+				tResult = ERR_MEM;
 				break;
 			}
 
-			iIsElapsed = systime_handle_is_elapsed(&tProgress);
-			if( iIsElapsed!=0 )
-			{
-				uprintf("Loaded 0x%08x bytes...\n", tftp_getLoadedBytes());
-
-				systime_handle_start_ms(&tProgress, 2000U);
-			}
-		} while( iResult==0 );
-
-		uprintf("State: %d, result: %d\n", tState, iResult);
-
-		if( iResult!=1 )
-		{
-			uprintf("Failed to load the TFTP data.\n");
+			/* Move to the next chunk. */
+			ptBuf = ptBuf->next;
 		}
-		else
+		ptHttpState->pucCnt = pucRec;
+
+		altcp_recved(conn, p->tot_len);
+		pbuf_free(p);
+	}
+
+	return tResult;
+}
+
+
+
+static void httpDownloadResultCallback(void *pvUser, httpc_result_t httpc_result, u32_t rx_content_len, u32_t srv_res, err_t err)
+{
+	HTTP_DOWNLOAD_STATE_T *ptHttpState;
+	httpc_result_fn pfnResult;
+
+
+	ptHttpState = (HTTP_DOWNLOAD_STATE_T*)pvUser;
+	if( ptHttpState!=NULL )
+	{
+		pfnResult = ptHttpState->pfnResult;
+		if( pfnResult!=NULL )
 		{
-			uprintf("TFTP data loaded successfully.\n");
-			pucDataEnd = tftp_getDataPointer();
-			uprintf("Data: 0x%08x - 0x%08x\n", pucDataStart, pucDataEnd);
-			pucTftpHash = (const unsigned char*)tftp_getHash();
-//			hexdump(pucTftpHash, 48);
+			pfnResult(pvUser, httpc_result, rx_content_len, srv_res, err);
+		}
 
-			if( ppucDataBufferEnd!=NULL )
-			{
-				*ppucDataBufferEnd = pucDataEnd;
-			}
-			if( pucHash!=NULL )
-			{
-				memcpy(pucHash, pucTftpHash, 48);
-			}
+		ptHttpState->fIsFinished = 1U;
+		ptHttpState->tHttpcResult = httpc_result;
+		ptHttpState->ulServerResponse = srv_res;
+		ptHttpState->tResult = err;
+	}
+}
 
-			iResult = 0;
+
+
+static err_t httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigned char *pucBuffer, unsigned int sizBuffer, unsigned int *psizDownloaded)
+{
+	err_t tResult;
+	httpc_state_t *ptConnection;
+	httpc_connection_t tHttpConnection;
+	HTTP_DOWNLOAD_STATE_T tHttpDownload;
+
+
+	tHttpDownload.pucStart = pucBuffer;
+	tHttpDownload.pucCnt = pucBuffer;
+	tHttpDownload.pucEnd = pucBuffer + sizBuffer;
+	tHttpDownload.pfnResult = NULL;
+	tHttpDownload.fIsFinished = 0U;
+	tHttpDownload.tHttpcResult = 0;
+	tHttpDownload.ulServerResponse = 0;
+	tHttpDownload.tResult = 0;
+
+	memset(&tHttpConnection, 0, sizeof(httpc_connection_t));
+	tResult = httpc_get_file(ptServerIpAddr, HTTP_DEFAULT_PORT, pcUri, &tHttpConnection, httpDownloadDataCallback, &tHttpDownload, &ptConnection);
+	if( tResult==ERR_OK )
+	{
+		/* Save the HTTP client result callback. */
+		tHttpDownload.pfnResult = tHttpConnection.result_fn;
+		/* Set the local result callback. */
+		tHttpConnection.result_fn = httpDownloadResultCallback;
+
+		/* Wait until the download is finished. */
+		while( tHttpDownload.fIsFinished==0U )
+		{
+			network_cyclic_process();
+		}
+
+		uprintf("Download finished: %d %d %d\n", tHttpDownload.tHttpcResult, tHttpDownload.ulServerResponse, tHttpDownload.tResult);
+		tResult = tHttpDownload.tResult;
+		if( tResult==ERR_OK && psizDownloaded!=NULL )
+		{
+			*psizDownloaded = (unsigned int)(tHttpDownload.pucCnt-tHttpDownload.pucStart);
 		}
 	}
 
-	return iResult;
+	return tResult;
 }
 
 
 
-static char acFileNameData[1024];
-static unsigned char aucDataHash[48];
-static unsigned long ulDataFileSize;
-
-static int getDeviceInfo(void)
+static int parseInfoFile(const char *pcBuffer, unsigned int sizBuffer, DEVICE_INFO_T *ptDeviceInfo)
 {
-	unsigned long ulDeviceNumber;
-	unsigned long ulHardwareRevision;
-	unsigned long ulDeviceNumberHi;
-	unsigned long ulDeviceNumberLo;
 	int iResult;
-	unsigned char *pucBuffer;
-	char *pcCnt;
-	unsigned char *pucInfoEnd;
-	char *pcInfoEnd;
+	const char *pcCnt;
+	const char *pcInfoEnd;
 	unsigned int uiLineSize;
 	unsigned int uiShift;
 	unsigned int uiInc;
 	char cDigit;
 	unsigned char ucData;
 	unsigned char *pucHash;
-	char acFileNameInfo[32];
 
 
-	/* TODO: Get this from the FDL maybe? */
-	ulDeviceNumber = 1320102;
-	ulHardwareRevision = 3;
+	/* Try to parse the Info file. */
+	pcInfoEnd = pcBuffer + sizBuffer;
 
-	ulDeviceNumberHi = ulDeviceNumber / 1000U;
-	ulDeviceNumberLo = ulDeviceNumber - (1000U * ulDeviceNumberHi);
-
-	snuprintf(acFileNameInfo, sizeof(acFileNameInfo), "%d.%dR%d.txt", ulDeviceNumberHi, ulDeviceNumberLo, ulHardwareRevision);
-	uprintf("Found hardware %d.%d R%d, loading info file '%s'.\n", ulDeviceNumberHi, ulDeviceNumberLo, ulHardwareRevision, acFileNameInfo);
-
-	/* Load the info file with TFTP. Use the DDR as a buffer. */
-	pucBuffer = (unsigned char*)0x40000000U;
-	iResult = tftp_load_file(acFileNameInfo, pucBuffer, &pucInfoEnd, NULL);
-	if( iResult==0 )
+	/* Look for the first newline. */
+	pcCnt = pcBuffer;
+	uiLineSize = 0;
+	while( pcCnt<pcInfoEnd )
 	{
-		/* Try to parse the Info file. */
-		pcInfoEnd = (char*)pucInfoEnd;
-
-		/* Look for the first newline. */
-		pcCnt = (char*)pucBuffer;
-		uiLineSize = 0;
-		while( pcCnt<pcInfoEnd )
+		if( *pcCnt=='\n' )
 		{
-			if( *pcCnt=='\n' )
-			{
-				break;
-			}
-			else
-			{
-				++pcCnt;
-				++uiLineSize;
-			}
+			break;
 		}
-
-		if( pcCnt<pcInfoEnd )
+		else
 		{
-			if( uiLineSize<sizeof(acFileNameData)-1 )
+			++pcCnt;
+			++uiLineSize;
+		}
+	}
+
+	if( pcCnt<pcInfoEnd )
+	{
+		if( uiLineSize<sizeof(ptDeviceInfo->acFileNameData)-1 )
+		{
+			/* Copy the filename. */
+			memcpy(ptDeviceInfo->acFileNameData, pcBuffer, uiLineSize);
+			/* Terminate the filename. */
+			ptDeviceInfo->acFileNameData[uiLineSize] = 0x00;
+
+			/* Skip the newline. */
+			++pcCnt;
+
+			/* Expect 96 hex digits. */
+			pucHash = ptDeviceInfo->aucDataHash;
+			memset(ptDeviceInfo->aucDataHash, 0, sizeof(ptDeviceInfo->aucDataHash));
+			if( (pcCnt+96)<pcInfoEnd )
 			{
-				/* Copy the filename. */
-				memcpy(acFileNameData, pucBuffer, uiLineSize);
-				/* Terminate the filename. */
-				acFileNameData[uiLineSize] = 0x00;
-
-				/* Skip the newline. */
-				++pcCnt;
-
-				/* Expect 96 hex digits. */
-				pucHash = aucDataHash;
-				memset(aucDataHash, 0, sizeof(aucDataHash));
-				if( (pcCnt+96)<pcInfoEnd )
+				uiLineSize = 0;
+				do
 				{
-					uiLineSize = 0;
-					do
+					/* The shift value should alternate between 4 and 0, so that...
+						*  pos   012345678...
+						*  inc   010101010...
+						*  shift 404040404...
+						*/
+					uiInc = uiLineSize & 1U;
+					uiShift = (uiInc ^ 1U) << 2U;
+					cDigit = pcCnt[uiLineSize];
+					if( cDigit>='0' && cDigit<='9' )
 					{
-						/* The shift value should alternate between 4 and 0, so that...
-						 *  pos   012345678...
-						 *  inc   010101010...
-						 *  shift 404040404...
-						 */
-						uiInc = uiLineSize & 1U;
-						uiShift = (uiInc ^ 1U) << 2U;
-						cDigit = pcCnt[uiLineSize];
-						if( cDigit>='0' && cDigit<='9' )
-						{
-							ucData = (unsigned char)((cDigit - '0') << uiShift);
-							*pucHash |= ucData;
-							pucHash += uiInc;
-							++uiLineSize;
-						}
-						else if( cDigit>='a' && cDigit<='f' )
-						{
-							ucData = (unsigned char)(((cDigit - 'a') + 10) << uiShift);
-							*pucHash |= ucData;
-							pucHash += uiInc;
-							++uiLineSize;
-						}
-						else if( cDigit>='A' && cDigit<='F' )
-						{
-							ucData = (unsigned char)(((cDigit - 'A') + 10) << uiShift);
-							*pucHash |= ucData;
-							pucHash += uiInc;
-							++uiLineSize;
-						}
-						else
-						{
-							break;
-						}
-					} while( uiLineSize<96 );
-					if( uiLineSize==96 )
+						ucData = (unsigned char)((cDigit - '0') << uiShift);
+						*pucHash |= ucData;
+						pucHash += uiInc;
+						++uiLineSize;
+					}
+					else if( cDigit>='a' && cDigit<='f' )
 					{
-						/* The hash is OK. */
-						iResult = 0;
+						ucData = (unsigned char)(((cDigit - 'a') + 10) << uiShift);
+						*pucHash |= ucData;
+						pucHash += uiInc;
+						++uiLineSize;
+					}
+					else if( cDigit>='A' && cDigit<='F' )
+					{
+						ucData = (unsigned char)(((cDigit - 'A') + 10) << uiShift);
+						*pucHash |= ucData;
+						pucHash += uiInc;
+						++uiLineSize;
 					}
 					else
 					{
-						/* Failed to parse the hash. */
-						uprintf("Failed to parse the hash.\n");
-						iResult = -1;
+						break;
 					}
+				} while( uiLineSize<96 );
+				if( uiLineSize==96 )
+				{
+					/* The hash is OK. */
+					iResult = 0;
 				}
 				else
 				{
-					uprintf("The info file is too small to hold a SHA384 after the file name.\n");
+					/* Failed to parse the hash. */
+					uprintf("Failed to parse the hash.\n");
 					iResult = -1;
 				}
 			}
 			else
 			{
-				uprintf("The filename must not exceed %d bytes. Here it has %d bytes.\n", sizeof(acFileNameData)-1, uiLineSize);
+				uprintf("The info file is too small to hold a SHA384 after the file name.\n");
 				iResult = -1;
 			}
 		}
 		else
 		{
-			uprintf("No newline found in info file!\n");
+			uprintf("The filename must not exceed %d bytes. Here it has %d bytes.\n", sizeof(ptDeviceInfo->acFileNameData)-1, uiLineSize);
 			iResult = -1;
 		}
 	}
 	else
 	{
-		uprintf("Failed to load the info file.\n");
+		uprintf("No newline found in info file!\n");
+		iResult = -1;
 	}
 
 	return iResult;
@@ -671,6 +632,55 @@ static int getDeviceInfo(void)
 
 
 
+static int getDeviceInfo(DEVICE_INFO_T *ptDeviceInfo)
+{
+	unsigned long ulDeviceNumber;
+	unsigned long ulHardwareRevision;
+	unsigned long ulDeviceNumberHi;
+	unsigned long ulDeviceNumberLo;
+	err_t tResult;
+	unsigned int uiDownloadSize;
+	int iResult;
+	ip4_addr_t tServerIpAddr;
+	char acUri[32];
+
+
+	/* FIXME: get the server address from... somewhere. */
+	IP4_ADDR(&tServerIpAddr, 192,168,2,118);
+
+	/* Get the device number and the hardware revision from the device info block. */
+	ulDeviceNumber = ptDeviceInfo->ulDeviceNr;
+	ulHardwareRevision = ptDeviceInfo->ulHwRev;
+
+	/* Split the device number to insert a thousands separator. */
+	ulDeviceNumberHi = ulDeviceNumber / 1000U;
+	ulDeviceNumberLo = ulDeviceNumber - (1000U * ulDeviceNumberHi);
+
+	/* Construct the URI for the file info. */
+	usnprintf(acUri, sizeof(acUri), "/%04d.%03dR%d.txt", ulDeviceNumberHi, ulDeviceNumberLo, ulHardwareRevision);
+	uprintf("Loading info file '%s'.\n", acUri);
+
+	/* FIXME: debug, remove this. */
+	memset(tFlashBuffer.auc, 0, FLASH_BUFFER_SIZE);
+
+	/* Download the file. */
+	tResult = httpDownload(&tServerIpAddr, acUri, tFlashBuffer.auc, FLASH_BUFFER_SIZE, &uiDownloadSize);
+	if( tResult==ERR_OK )
+	{
+		iResult = parseInfoFile(tFlashBuffer.ac, uiDownloadSize, ptDeviceInfo);
+	}
+	else
+	{
+		uprintf("Failed to load the info file.\n");
+		iResult = -1;
+	}
+
+	return iResult;
+}
+
+
+
+#if 0
 static int getDataFile(void)
 {
 	int iResult;
@@ -1079,10 +1089,21 @@ void flashapp_main(void)
 		{
 			uprintf("Found a valid FDL for %dR%dSN%d.\n", tDeviceInfo.ulDeviceNr, tDeviceInfo.ulHwRev, tDeviceInfo.ulSerial);
 
+			uprintf("Initializing network...\n");
 			setupNetwork();
-			while(1)
+
+			uprintf("Reading the device info file.\n");
+			iResult = getDeviceInfo(&tDeviceInfo);
+			if( iResult==0 )
 			{
-				network_cyclic_process();
+				uprintf("Device info OK.\n");
+
+				rdy_run_blinki_init(&tBlinkiHandle, BLINKI_M_FLASHING_OK, BLINKI_S_FLASHING_OK);
+				while(1)
+				{
+					rdy_run_blinki(&tBlinkiHandle);
+					network_cyclic_process();
+				}
 			}
 		}
 	}
@@ -1153,5 +1174,16 @@ void flashapp_main(void)
 		rdy_run_setLEDs(RDYRUN_YELLOW);
 	}
 
-	while(1) {};
+	/* Stop here, but still allow network communication. */
+	while(1)
+	{
+		network_cyclic_process();
+	};
+}
+
+
+void* _sbrk(int incr)
+{
+	uprintf("Stop\n");
+	return NULL;
 }

@@ -9,6 +9,9 @@
 /* Set the memory alignment to 4. */
 #define MEM_ALIGNMENT 4U
 
+/* TODO: is this needed for the HTTP client? */
+#define LWIP_ALTCP 1
+
 /* DHCP is not needed. The IP address was already retrieved by the ROM code. */
 #define LWIP_DHCP 0
 /* AUTOIP is also not needed as the IP address is already there. */
