@@ -23,13 +23,49 @@ void sha384_initialize(void)
 
 
 
-void sha384_finalize(unsigned long *pulHash, unsigned int sizHash, unsigned long ulDataSizeDw)
+void sha384_update(void *pvData, unsigned int sizChunk)
+{
+	HOSTDEF(ptCryptArea);
+	union PTR_UNION
+	{
+		const unsigned char *puc;
+		const unsigned long *pul;
+		unsigned long ul;
+	} tPtr;
+	unsigned long ulEnd;
+
+
+	ulEnd = ((unsigned long)pvData) + sizChunk;
+
+	tPtr.puc = pvData;
+
+	/* Add bytes to the hash until the address is aligned to 4. */
+	while( (tPtr.ul & 3U)!=0 )
+	{
+		sha384_update_uc(*(tPtr.puc++));
+	}
+	/* Add DWORDs to the hash as long as enough data is available. */
+	while( (tPtr.ul+4)<=ulEnd )
+	{
+		sha384_update_ul(*(tPtr.pul++));
+	}
+	/* Add the rest of the data as bytes to the hash. */
+	while( tPtr.ul<ulEnd )
+	{
+		sha384_update_uc(*(tPtr.puc++));
+	}
+}
+
+
+
+void sha384_finalize(SHA384_T *ptHash, unsigned long ulDataSizeDw)
 {
 	HOSTDEF(ptCryptArea);
 	unsigned long long ullBits;
 	unsigned long ulValue;
 	unsigned long ulValueRev;
 	unsigned long ulPadDw;
+	unsigned int sizHash;
 
 
 	/* Pad the data. */
@@ -79,25 +115,28 @@ void sha384_finalize(unsigned long *pulHash, unsigned int sizHash, unsigned long
 	} while( ulValue==0 );
 
 	/* Copy the hash to the buffer. */
-	if( pulHash!=NULL )
+	if( ptHash!=NULL )
 	{
+		/* Get the size of the hash in DWORDS. */
+		sizHash = 48 / sizeof(unsigned long);
 		while(sizHash!=0)
 		{
 			--sizHash;
-			pulHash[sizHash] = ptCryptArea->aulCrypt_sha_hash[sizHash];
+			ptHash->aul[sizHash] = ptCryptArea->aulCrypt_sha_hash[sizHash];
 		}
 	}
 }
 
 
 
-void sha384_finalize_byte(unsigned long *pulHash, unsigned int sizHash, unsigned long ulDataSizeByte)
+void sha384_finalize_byte(SHA384_T *ptHash, unsigned long ulDataSizeByte)
 {
 	HOSTDEF(ptCryptArea);
 	unsigned long long ullBits;
 	unsigned long ulValue;
 	unsigned long ulValueRev;
 	unsigned long ulPadByte;
+	unsigned int sizHash;
 
 
 	/* Pad the data. */
@@ -147,12 +186,14 @@ void sha384_finalize_byte(unsigned long *pulHash, unsigned int sizHash, unsigned
 	} while( ulValue==0 );
 
 	/* Copy the hash to the buffer. */
-	if( pulHash!=NULL )
+	if( ptHash!=NULL )
 	{
+		/* Get the size of the hash in DWORDS. */
+		sizHash = 48 / sizeof(unsigned long);
 		while(sizHash!=0)
 		{
 			--sizHash;
-			pulHash[sizHash] = ptCryptArea->aulCrypt_sha_hash[sizHash];
+			ptHash->aul[sizHash] = ptCryptArea->aulCrypt_sha_hash[sizHash];
 		}
 	}
 }
