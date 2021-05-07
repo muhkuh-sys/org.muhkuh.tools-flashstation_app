@@ -42,29 +42,16 @@ SConscript('platform/SConscript')
 # (i.e. spaces, tabs, newlines). The amount of whitespace does not matter.
 flashapp_sources = """
 	src/crc32.c
+	src/fdl.c
 	src/main.c
 	src/init.S
+	src/malloc_dummy.c
+	src/network_lwip.c
 	src/options.c
 	src/progress_bar.c
 	src/rng.c
 	src/sha384.c
 	src/networking/driver/drv_eth_xc.c
-	src/networking/driver/rpu_eth0.c
-	src/networking/driver/rpu_eth1.c
-	src/networking/driver/rpu_eth2.c
-	src/networking/driver/rpu_eth3.c
-	src/networking/driver/tpu_eth0.c
-	src/networking/driver/tpu_eth1.c
-	src/networking/driver/tpu_eth2.c
-	src/networking/driver/tpu_eth3.c
-	src/networking/driver/xpec_eth_std_mac_rpec0.c
-	src/networking/driver/xpec_eth_std_mac_rpec1.c
-	src/networking/driver/xpec_eth_std_mac_rpec2.c
-	src/networking/driver/xpec_eth_std_mac_rpec3.c
-	src/networking/driver/xpec_clean_tpec0.c
-	src/networking/driver/xpec_clean_tpec1.c
-	src/networking/driver/xpec_clean_tpec2.c
-	src/networking/driver/xpec_clean_tpec3.c
 """
 
 sources_lwip = """

@@ -1,5 +1,8 @@
 #include <stdint.h>
 
+#include "device_info.h"
+
+
 #ifndef __FDL_H__
 #define __FDL_H__
 
@@ -111,5 +114,9 @@ typedef union FDL_BUFFER_UNION
 	FDL_T t;
 	unsigned char auc[sizeof(FDL_T)];
 } FDL_BUFFER_T;
+
+
+int readFDL(DEVICE_INFO_T *ptDeviceInfo);
+
 
 #endif  /* __FDL_H__ */
