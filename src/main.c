@@ -7,6 +7,7 @@
 #include "netx_io_areas.h"
 #include "options.h"
 #include "rdy_run.h"
+#include "sha384.h"
 #include "systime.h"
 #include "uart_standalone.h"
 #include "uprintf.h"
@@ -48,8 +49,8 @@ typedef struct DEVICE_INFO_STRUCT
 	unsigned long ulHwRev;
 	unsigned long ulSerial;
 
-	char acFileNameData[1024];
-	unsigned char aucDataHash[48];
+	char acDataUri[1024];
+	SHA384_T tHash;
 } DEVICE_INFO_T;
 
 /*-------------------------------------------------------------------------*/
@@ -162,9 +163,11 @@ static int readFDL(DEVICE_INFO_T *ptDeviceInfo)
 
 typedef struct HTTP_DOWNLOAD_STATE_STRUCT
 {
-	unsigned char *pucStart;
-	unsigned char *pucCnt;
-	unsigned char *pucEnd;
+	unsigned char *pucStart;  /* Start of the buffer for the downloaded data. */
+	unsigned char *pucCnt;    /* The current end of the downloaded data. */
+	unsigned char *pucEnd;    /* End of the available buffer. */
+
+	SHA384_T tHash;           /* The SHA384 sum of the downloaded data. */
 
 	httpc_result_fn pfnResult;
 	unsigned int fIsFinished;
@@ -396,9 +399,10 @@ static err_t httpDownloadDataCallback(void *pvUser, struct altcp_pcb *conn, stru
 {
 	HTTP_DOWNLOAD_STATE_T *ptHttpState;
 	uint16_t sizChunk;
-	struct pbuf* ptBuf;
+	struct pbuf *ptBuf;
 	unsigned char *pucRec;
 	unsigned int sizBufLeft;
+	void *pvChunk;
 	err_t tResult;
 
 
@@ -415,17 +419,30 @@ static err_t httpDownloadDataCallback(void *pvUser, struct altcp_pcb *conn, stru
 		ptBuf = p;
 		while( ptBuf!=NULL )
 		{
-			sizChunk = p->len;
-			if( sizBufLeft>sizChunk )
+			/* Get the next chunk in the linked list. */
+			pvChunk = ptBuf->payload;
+			sizChunk = ptBuf->len;
+
+			/* Add the chunk data to the hash sum. */
+			sha384_update(pvChunk, sizChunk);
+
+			/* Copy the data to the download buffer - if there is one. */
+			if( pucRec!=NULL )
 			{
-				memcpy(pucRec, ptBuf->payload, sizChunk);
-				pucRec += sizChunk;
-				sizBufLeft -= sizChunk;
-			}
-			else
-			{
-				tResult = ERR_MEM;
-				break;
+				/* Does the chunk fit into the buffer? */
+				if( sizBufLeft>sizChunk )
+				{
+					/* Yes -> copy. */
+					memcpy(pucRec, pvChunk, sizChunk);
+					pucRec += sizChunk;
+					sizBufLeft -= sizChunk;
+				}
+				else
+				{
+					/* No -> exit with error. */
+					tResult = ERR_MEM;
+					break;
+				}
 			}
 
 			/* Move to the next chunk. */
@@ -457,6 +474,12 @@ static void httpDownloadResultCallback(void *pvUser, httpc_result_t httpc_result
 			pfnResult(pvUser, httpc_result, rx_content_len, srv_res, err);
 		}
 
+		/* Only finish the hash if the download was successful. */
+		if( httpc_result==HTTPC_RESULT_OK )
+		{
+			sha384_finalize_byte(&(ptHttpState->tHash), rx_content_len);
+		}
+
 		ptHttpState->fIsFinished = 1U;
 		ptHttpState->tHttpcResult = httpc_result;
 		ptHttpState->ulServerResponse = srv_res;
@@ -466,10 +489,12 @@ static void httpDownloadResultCallback(void *pvUser, httpc_result_t httpc_result
 
 
 
-static err_t httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigned char *pucBuffer, unsigned int sizBuffer, unsigned int *psizDownloaded)
+static err_t httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigned char *pucBuffer, unsigned int sizBuffer, unsigned int *psizDownloaded, SHA384_T *ptHash)
 {
 	err_t tResult;
 	httpc_state_t *ptConnection;
+	unsigned long ulTimeStart;
+	unsigned long ulTimeEnd;
 	httpc_connection_t tHttpConnection;
 	HTTP_DOWNLOAD_STATE_T tHttpDownload;
 
@@ -477,11 +502,17 @@ static err_t httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigne
 	tHttpDownload.pucStart = pucBuffer;
 	tHttpDownload.pucCnt = pucBuffer;
 	tHttpDownload.pucEnd = pucBuffer + sizBuffer;
+	memset(&tHttpDownload.tHash, 0, sizeof(tHttpDownload.tHash));
 	tHttpDownload.pfnResult = NULL;
 	tHttpDownload.fIsFinished = 0U;
 	tHttpDownload.tHttpcResult = 0;
 	tHttpDownload.ulServerResponse = 0;
 	tHttpDownload.tResult = 0;
+
+	sha384_initialize();
+
+	/* Get the system time in ms. */
+	ulTimeStart = systime_get_ms();
 
 	memset(&tHttpConnection, 0, sizeof(httpc_connection_t));
 	tResult = httpc_get_file(ptServerIpAddr, HTTP_DEFAULT_PORT, pcUri, &tHttpConnection, httpDownloadDataCallback, &tHttpDownload, &ptConnection);
@@ -498,11 +529,20 @@ static err_t httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigne
 			network_cyclic_process();
 		}
 
-		uprintf("Download finished: %d %d %d\n", tHttpDownload.tHttpcResult, tHttpDownload.ulServerResponse, tHttpDownload.tResult);
+		/* Get the system time in ms. */
+		ulTimeEnd = systime_get_ms();
+		uprintf("Download finished after %dms: %d %d %d\n", ulTimeEnd-ulTimeStart, tHttpDownload.tHttpcResult, tHttpDownload.ulServerResponse, tHttpDownload.tResult);
 		tResult = tHttpDownload.tResult;
-		if( tResult==ERR_OK && psizDownloaded!=NULL )
+		if( tResult==ERR_OK )
 		{
-			*psizDownloaded = (unsigned int)(tHttpDownload.pucCnt-tHttpDownload.pucStart);
+			if( psizDownloaded!=NULL )
+			{
+				*psizDownloaded = (unsigned int)(tHttpDownload.pucCnt-tHttpDownload.pucStart);
+			}
+			if( ptHash!=NULL )
+			{
+				memcpy(ptHash, &(tHttpDownload.tHash), sizeof(SHA384_T));
+			}
 		}
 	}
 
@@ -545,19 +585,21 @@ static int parseInfoFile(const char *pcBuffer, unsigned int sizBuffer, DEVICE_IN
 
 	if( pcCnt<pcInfoEnd )
 	{
-		if( uiLineSize<sizeof(ptDeviceInfo->acFileNameData)-1 )
+		if( uiLineSize<sizeof(ptDeviceInfo->acDataUri)-1 )
 		{
-			/* Copy the filename. */
-			memcpy(ptDeviceInfo->acFileNameData, pcBuffer, uiLineSize);
+			/* Start the URI with a slash. */
+			ptDeviceInfo->acDataUri[0] = '/';
+			/* Append the filename. */
+			memcpy(ptDeviceInfo->acDataUri + 1U, pcBuffer, uiLineSize);
 			/* Terminate the filename. */
-			ptDeviceInfo->acFileNameData[uiLineSize] = 0x00;
+			ptDeviceInfo->acDataUri[uiLineSize + 1U] = 0x00;
 
 			/* Skip the newline. */
 			++pcCnt;
 
 			/* Expect 96 hex digits. */
-			pucHash = ptDeviceInfo->aucDataHash;
-			memset(ptDeviceInfo->aucDataHash, 0, sizeof(ptDeviceInfo->aucDataHash));
+			pucHash = ptDeviceInfo->tHash.auc;
+			memset(&(ptDeviceInfo->tHash), 0, sizeof(SHA384_T));
 			if( (pcCnt+96)<pcInfoEnd )
 			{
 				uiLineSize = 0;
@@ -617,7 +659,7 @@ static int parseInfoFile(const char *pcBuffer, unsigned int sizBuffer, DEVICE_IN
 		}
 		else
 		{
-			uprintf("The filename must not exceed %d bytes. Here it has %d bytes.\n", sizeof(ptDeviceInfo->acFileNameData)-1, uiLineSize);
+			uprintf("The filename must not exceed %d bytes. Here it has %d bytes.\n", sizeof(ptDeviceInfo->acDataUri)-1, uiLineSize);
 			iResult = -1;
 		}
 	}
@@ -632,7 +674,7 @@ static int parseInfoFile(const char *pcBuffer, unsigned int sizBuffer, DEVICE_IN
 
 
 
-static int getDeviceInfo(DEVICE_INFO_T *ptDeviceInfo)
+static int getDeviceInfo(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo)
 {
 	unsigned long ulDeviceNumber;
 	unsigned long ulHardwareRevision;
@@ -641,12 +683,8 @@ static int getDeviceInfo(DEVICE_INFO_T *ptDeviceInfo)
 	err_t tResult;
 	unsigned int uiDownloadSize;
 	int iResult;
-	ip4_addr_t tServerIpAddr;
 	char acUri[32];
 
-
-	/* FIXME: get the server address from... somewhere. */
-	IP4_ADDR(&tServerIpAddr, 192,168,2,118);
 
 	/* Get the device number and the hardware revision from the device info block. */
 	ulDeviceNumber = ptDeviceInfo->ulDeviceNr;
@@ -664,7 +702,7 @@ static int getDeviceInfo(DEVICE_INFO_T *ptDeviceInfo)
 	memset(tFlashBuffer.auc, 0, FLASH_BUFFER_SIZE);
 
 	/* Download the file. */
-	tResult = httpDownload(&tServerIpAddr, acUri, tFlashBuffer.auc, FLASH_BUFFER_SIZE, &uiDownloadSize);
+	tResult = httpDownload(ptServerIpAddr, acUri, tFlashBuffer.auc, FLASH_BUFFER_SIZE, &uiDownloadSize, NULL);
 	if( tResult==ERR_OK )
 	{
 		iResult = parseInfoFile(tFlashBuffer.ac, uiDownloadSize, ptDeviceInfo);
@@ -680,30 +718,31 @@ static int getDeviceInfo(DEVICE_INFO_T *ptDeviceInfo)
 
 
 
-#if 0
-static int getDataFile(void)
+static int getDataFile(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo)
 {
 	int iResult;
 	unsigned char *pucBuffer;
-	unsigned char aucMyHash[48];
+	unsigned int sizBuffer;
+	unsigned int uiDownloadSize;
+	err_t tResult;
+	SHA384_T tMyHash;
 
 
 	iResult = -1;
 
-	uprintf("Reading data file '%s' with the expected hash:\n", acFileNameData);
-	hexdump(aucDataHash, sizeof(aucDataHash));
+	uprintf("Reading data file '%s' with the expected hash:\n", ptDeviceInfo->acDataUri);
+	hexdump(ptDeviceInfo->tHash.auc, sizeof(SHA384_T));
 
 	/* Load the info file with TFTP. Use the DDR as a buffer. */
-	pucBuffer = (unsigned char*)0x40000000U;
-	iResult = tftp_load_file(acFileNameData, pucBuffer, NULL, aucMyHash);
-	if( iResult==0 )
+	pucBuffer = NULL; /* (unsigned char*)0x40000000U; */
+	sizBuffer = 0x40000000U;
+	tResult = httpDownload(ptServerIpAddr, ptDeviceInfo->acDataUri, pucBuffer, sizBuffer, &uiDownloadSize, &tMyHash);
+	if( tResult==ERR_OK )
 	{
 		/* Compare the hash. */
-		if( memcmp(aucMyHash, aucDataHash, sizeof(aucDataHash))==0 )
+		if( memcmp(&tMyHash, &(ptDeviceInfo->tHash), sizeof(SHA384_T))==0 )
 		{
 			uprintf("The data file is OK.\n");
-
-			ulDataFileSize = tftp_getLoadedBytes();
 
 			iResult = 0;
 		}
@@ -721,7 +760,7 @@ static int getDataFile(void)
 }
 
 
-
+#if 0
 static int flashDataFile(BUS_T tBus, DEVICE_DESCRIPTION_T *ptDeviceDesc, unsigned long ulOffsetInBytes, unsigned char *pucData, unsigned long ulDataSizeInBytes)
 {
 	int iResult;
@@ -1045,6 +1084,7 @@ void flashapp_main(void)
 	int iResult;
 //	unsigned char *pucWfpImage;
 	DEVICE_INFO_T tDeviceInfo;
+	ip4_addr_t tServerIpAddr;
 
 
 	systime_init();
@@ -1092,17 +1132,24 @@ void flashapp_main(void)
 			uprintf("Initializing network...\n");
 			setupNetwork();
 
+			/* FIXME: get the server address from... somewhere. */
+			IP4_ADDR(&tServerIpAddr, 192,168,2,118);
+
 			uprintf("Reading the device info file.\n");
-			iResult = getDeviceInfo(&tDeviceInfo);
+			iResult = getDeviceInfo(&tServerIpAddr, &tDeviceInfo);
 			if( iResult==0 )
 			{
 				uprintf("Device info OK.\n");
 
-				rdy_run_blinki_init(&tBlinkiHandle, BLINKI_M_FLASHING_OK, BLINKI_S_FLASHING_OK);
-				while(1)
+				iResult = getDataFile(&tServerIpAddr, &tDeviceInfo);
+				if( iResult==0 )
 				{
-					rdy_run_blinki(&tBlinkiHandle);
-					network_cyclic_process();
+					rdy_run_blinki_init(&tBlinkiHandle, BLINKI_M_FLASHING_OK, BLINKI_S_FLASHING_OK);
+					while(1)
+					{
+						rdy_run_blinki(&tBlinkiHandle);
+						network_cyclic_process();
+					}
 				}
 			}
 		}
