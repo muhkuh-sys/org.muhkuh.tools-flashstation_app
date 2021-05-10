@@ -296,6 +296,8 @@ void flashapp_main(void)
 {
 	BLINKI_HANDLE_T tBlinkiHandle;
 	int iResult;
+	unsigned long ulBlinkMask;
+	unsigned long ulBlinkState;
 	DEVICE_INFO_T tDeviceInfo;
 	ip4_addr_t tServerIpAddr;
 
@@ -330,6 +332,9 @@ void flashapp_main(void)
 	if( iResult!=0 )
 	{
 		uprintf("Failed to acknowledge the last ROM packet.\n");
+
+		ulBlinkMask = BLINKI_M_ROM_ACK_FAILED;
+		ulBlinkState = BLINKI_S_ROM_ACK_FAILED;
 	}
 	else
 #else
@@ -342,7 +347,12 @@ void flashapp_main(void)
 		* to determine the image to flash.
 		*/
 		iResult = readFDL(&tDeviceInfo);
-		if( iResult==0 )
+		if( iResult!=0 )
+		{
+			ulBlinkMask = BLINKI_M_FDL_READ_FAILED;
+			ulBlinkState = BLINKI_S_FDL_READ_FAILED;
+		}
+		else
 		{
 			uprintf("Found a valid FDL for %dR%dSN%d.\n", tDeviceInfo.ulDeviceNr, tDeviceInfo.ulHwRev, tDeviceInfo.ulSerial);
 
@@ -356,53 +366,53 @@ void flashapp_main(void)
 
 			uprintf("Reading the device info file.\n");
 			iResult = getDeviceInfo(&tServerIpAddr, &tDeviceInfo);
-			if( iResult==0 )
+			if( iResult!=0 )
+			{
+				ulBlinkMask = BLINKI_M_DOWNLOAD_DEVICEINFO_FAILED;
+				ulBlinkState = BLINKI_S_DOWNLOAD_DEVICEINFO_FAILED;
+			}
+			else
 			{
 				uprintf("Device info OK.\n");
 
 				iResult = getDataFile(&tServerIpAddr, &tDeviceInfo);
-				if( iResult==0 )
+				if( iResult!=0 )
+				{
+					ulBlinkMask = BLINKI_M_DOWNLOAD_SWFP_FAILED;
+					ulBlinkState = BLINKI_S_DOWNLOAD_SWFP_FAILED;
+				}
+				else
 				{
 					iResult = processWfp(&tDeviceInfo);
 					if( iResult==0 )
 					{
 						uprintf("Flashed the complete WFP.\n");
 
-						rdy_run_blinki_init(&tBlinkiHandle, BLINKI_M_FLASHING_OK, BLINKI_S_FLASHING_OK);
-						while(1)
-						{
-							rdy_run_blinki(&tBlinkiHandle);
-							network_cyclic_process();
-						}
+						ulBlinkMask = BLINKI_M_FLASHING_OK;
+						ulBlinkState = BLINKI_S_FLASHING_OK;
 					}
 					else
 					{
 						uprintf("Failed to flash the WFP.\n");
+
+						ulBlinkMask = BLINKI_M_FLASHING_FAILED;
+						ulBlinkState = BLINKI_S_FLASHING_FAILED;
 					}
 				}
+			}
+
+			rdy_run_blinki_init(&tBlinkiHandle, ulBlinkMask, ulBlinkState);
+			while(1)
+			{
+				rdy_run_blinki(&tBlinkiHandle);
+				network_cyclic_process();
 			}
 		}
 	}
 
-	if( iResult==0 )
-	{
-		uprintf("OK\n");
-
-		rdy_run_blinki_init(&tBlinkiHandle, BLINKI_M_FLASHING_OK, BLINKI_S_FLASHING_OK);
-		while(1)
-		{
-			rdy_run_blinki(&tBlinkiHandle);
-		}
-	}
-	else
-	{
-		uprintf("ERROR\n");
-		rdy_run_setLEDs(RDYRUN_YELLOW);
-	}
-
-	/* Stop here, but still allow network communication. */
+	rdy_run_blinki_init(&tBlinkiHandle, ulBlinkMask, ulBlinkState);
 	while(1)
 	{
-		network_cyclic_process();
-	};
+		rdy_run_blinki(&tBlinkiHandle);
+	}
 }
