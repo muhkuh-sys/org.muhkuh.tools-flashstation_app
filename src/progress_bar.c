@@ -60,7 +60,7 @@ void progress_bar_set_position(unsigned long ulPosition)
 void progress_bar_check_timer()
 {
 	/*  is the counter still running? */
-	if( systime_elapsed(ulProgressBar_TimerHandle, 100)!=0 )
+	if( systime_elapsed(ulProgressBar_TimerHandle, 2000)!=0 )
 	{
 		/*  counter already stopped -> time to print the progress */
 		progress_bar_show_progress(ulProgressBar_CurrentValue);
