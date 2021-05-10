@@ -1,5 +1,10 @@
 #include "wfp.h"
 
+#include "flasher_interface.h"
+#include "flasher_spi.h"
+#include "flasher_sdio.h"
+#include "uprintf.h"
+
 /*-------------------------------------------------------------------------*/
 
 static int flashDataFile(BUS_T tBus, DEVICE_DESCRIPTION_T *ptDeviceDesc, unsigned long ulOffsetInBytes, unsigned char *pucData, unsigned long ulDataSizeInBytes)
@@ -117,10 +122,7 @@ static int flashDataFile(BUS_T tBus, DEVICE_DESCRIPTION_T *ptDeviceDesc, unsigne
 
 
 
-static char aucBuffer[8192];
-
-
-static int processWfp(unsigned char *pucWfpImage, unsigned long ulWfpDataSizeInBytes)
+int processWfp(DEVICE_INFO_T *ptDeviceInfo)
 {
 	int iResult;
 	unsigned char *pucDataCnt;
@@ -137,6 +139,7 @@ static int processWfp(unsigned char *pucWfpImage, unsigned long ulWfpDataSizeInB
 	NETX_CONSOLEAPP_RESULT_T tResult;
 	DEVICE_DESCRIPTION_T tDeviceDesc;
 	FLASHER_SPI_CONFIGURATION_T tSpiConfig;
+	static char aucBuffer[8192];
 
 
 	iResult = 0;
@@ -146,8 +149,8 @@ static int processWfp(unsigned char *pucWfpImage, unsigned long ulWfpDataSizeInB
 	uiLastCs = 0xffffffffU;
 
 	/* Loop over the complete image. */
-	pucDataCnt = pucWfpImage;
-	pucDataEnd = pucWfpImage + ulWfpDataSizeInBytes;
+	pucDataCnt = ptDeviceInfo->pucWfpImage;
+	pucDataEnd = ptDeviceInfo->pucWfpImage + ptDeviceInfo->sizWfpImage;
 
 	if( (pucDataCnt+4)>pucDataEnd )
 	{

@@ -4,6 +4,7 @@
 #include "blinki_codes.h"
 #include "device_info.h"
 #include "fdl.h"
+#include "flasher_version.h"
 #include "network_lwip.h"
 #include "netx_io_areas.h"
 #include "rdy_run.h"
@@ -12,7 +13,7 @@
 #include "uart_standalone.h"
 #include "uprintf.h"
 #include "version.h"
-#include "flasher_version.h"
+#include "wfp.h"
 
 /*-------------------------------------------------------------------------*/
 
@@ -230,7 +231,7 @@ static int getDataFile(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo)
 	hexdump(ptDeviceInfo->tHash.auc, sizeof(SHA384_T));
 
 	/* Load the info file with TFTP. Use the DDR as a buffer. */
-	pucBuffer = NULL; /* (unsigned char*)0x40000000U; */
+	pucBuffer = (unsigned char*)0x40000000U;
 	sizBuffer = 0x40000000U;
 	tResult = httpDownload(ptServerIpAddr, ptDeviceInfo->acDataUri, pucBuffer, sizBuffer, &uiDownloadSize, &tMyHash);
 	if( tResult==ERR_OK )
@@ -238,6 +239,10 @@ static int getDataFile(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo)
 		/* Compare the hash. */
 		if( memcmp(&tMyHash, &(ptDeviceInfo->tHash), sizeof(SHA384_T))==0 )
 		{
+			/* Set the pointer to the downloaded image. */
+			ptDeviceInfo->pucWfpImage = pucBuffer;
+			ptDeviceInfo->sizWfpImage = uiDownloadSize;
+
 			uprintf("The data file is OK.\n");
 
 			iResult = 0;
@@ -265,7 +270,6 @@ void flashapp_main(void)
 {
 	BLINKI_HANDLE_T tBlinkiHandle;
 	int iResult;
-//	unsigned char *pucWfpImage;
 	DEVICE_INFO_T tDeviceInfo;
 	ip4_addr_t tServerIpAddr;
 
@@ -330,62 +334,26 @@ void flashapp_main(void)
 				iResult = getDataFile(&tServerIpAddr, &tDeviceInfo);
 				if( iResult==0 )
 				{
-					rdy_run_blinki_init(&tBlinkiHandle, BLINKI_M_FLASHING_OK, BLINKI_S_FLASHING_OK);
-					while(1)
-					{
-						rdy_run_blinki(&tBlinkiHandle);
-						network_cyclic_process();
-					}
-				}
-			}
-		}
-	}
-#if 0
-	else
-	{
-		uprintf("Initializing network...\n");
-		iResult = initializeNetwork();
-		if( iResult!=0 )
-		{
-			uprintf("Failed to initialize the network.\n");
-		}
-		else
-		{
-			uprintf("Reading the device info file.\n");
-			iResult = getDeviceInfo();
-			if( iResult==0 )
-			{
-				uprintf("Device info OK.\n");
-
-				/* Now load the data file. */
-				iResult = getDataFile();
-				if( iResult==0 )
-				{
-					uprintf("Data file OK.\n");
-
-					pucWfpImage = (unsigned char*)0x40000000U;
-					iResult = processWfp(pucWfpImage, ulDataFileSize);
+					iResult = processWfp(&tDeviceInfo);
 					if( iResult==0 )
 					{
 						uprintf("Flashed the complete WFP.\n");
+
+						rdy_run_blinki_init(&tBlinkiHandle, BLINKI_M_FLASHING_OK, BLINKI_S_FLASHING_OK);
+						while(1)
+						{
+							rdy_run_blinki(&tBlinkiHandle);
+							network_cyclic_process();
+						}
 					}
 					else
 					{
 						uprintf("Failed to flash the WFP.\n");
 					}
 				}
-				else
-				{
-					uprintf("Failed to read the data file.\n");
-				}
-			}
-			else
-			{
-				uprintf("Failed to read the device info file.\n");
 			}
 		}
 	}
-#endif
 
 	if( iResult==0 )
 	{

@@ -15,6 +15,8 @@ typedef struct DEVICE_INFO_STRUCT
 
 	char acDataUri[1024];
 	SHA384_T tHash;
+	unsigned char *pucWfpImage;
+	unsigned int sizWfpImage;
 } DEVICE_INFO_T;
 
 

@@ -51,6 +51,7 @@ flashapp_sources = """
 	src/progress_bar.c
 	src/rng.c
 	src/sha384.c
+	src/wfp.c
 	src/networking/driver/drv_eth_xc.c
 """
 
