@@ -20,6 +20,7 @@
 
 #include "progress_bar.h"
 
+#include "network_lwip.h"
 #include "uprintf.h"
 #include "systime.h"
 
@@ -55,6 +56,9 @@ void progress_bar_set_position(unsigned long ulPosition)
 {
 	ulProgressBar_CurrentValue = ulPosition;
 	progress_bar_check_timer();
+
+	/* Process network packets and events. */
+	network_cyclic_process();
 }
 
 void progress_bar_check_timer()
