@@ -43,6 +43,32 @@ static int ackLastRomcodePacket(void)
 
 
 
+static void setupHardware(DEVICE_INFO_T *ptDeviceInfo)
+{
+	HOSTDEF(ptAsicCtrlArea);
+	HOSTDEF(ptMmioCtrlArea);
+	unsigned long ulDeviceNr;
+//	unsigned long ulHwRev;
+
+
+	ulDeviceNr = ptDeviceInfo->ulDeviceNr;
+//	ulHwRev = ptDeviceInfo->ulHwRev;
+	if( (ulDeviceNr==9387000) || (ulDeviceNr==9387001) )
+	{
+		/* Set the Ethernet PHY LEDs.
+		 * ACT is connected to MMIO01 and
+		 * LINK is connected to MMIO02.
+		 */
+		ptAsicCtrlArea->ulAsic_ctrl_access_key = ptAsicCtrlArea->ulAsic_ctrl_access_key;
+		ptMmioCtrlArea->aulMmio_cfg[1] = NX4000_MMIO_CFG_PHY0_LED_PHY_CTRL_ACT;
+
+		ptAsicCtrlArea->ulAsic_ctrl_access_key = ptAsicCtrlArea->ulAsic_ctrl_access_key;
+		ptMmioCtrlArea->aulMmio_cfg[2] = NX4000_MMIO_CFG_PHY0_LED_PHY_CTRL_LNK;
+	}
+}
+
+
+
 static int parseInfoFile(const char *pcBuffer, unsigned int sizBuffer, DEVICE_INFO_T *ptDeviceInfo)
 {
 	int iResult;
@@ -318,6 +344,8 @@ void flashapp_main(void)
 		if( iResult==0 )
 		{
 			uprintf("Found a valid FDL for %dR%dSN%d.\n", tDeviceInfo.ulDeviceNr, tDeviceInfo.ulHwRev, tDeviceInfo.ulSerial);
+
+			setupHardware(&tDeviceInfo);
 
 			uprintf("Initializing network...\n");
 			setupNetwork();
