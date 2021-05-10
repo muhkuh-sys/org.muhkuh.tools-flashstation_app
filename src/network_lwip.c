@@ -53,6 +53,14 @@ typedef struct NETWORK_DEVICE_STATE_STRUCT
 static NETWORK_DEVICE_STATE_T tNetworkDeviceState;
 
 
+
+void network_init(void)
+{
+	memset(&tNetworkDeviceState, 0, sizeof(tNetworkDeviceState));
+}
+
+
+
 static err_t netif_output(struct netif *ptNetIf, struct pbuf *ptPBuf)
 {
 	NETWORK_DEVICE_STATE_T *ptState;
@@ -188,44 +196,47 @@ void network_cyclic_process(void)
 	ptNetIf = &(tNetworkDeviceState.tNetIf);
 	ptNetworkIf = tNetworkDeviceState.ptNetworkIf;
 
-	uiLinkState = ptNetworkIf->pfnGetLinkStatus(NULL);
-	if( uiLinkState==0 )
+	if( ptNetworkIf!=NULL )
 	{
-		/* TODO: Move to an error state. */
-		uprintf("The link is down.\n");
-		netif_set_link_down(ptNetIf);
-	}
-	else
-	{
-		/* Check for received frames, feed them to lwIP */
-		pvFrame = ptNetworkIf->pfnGetReceivedPacket(&sizFrame, NULL);
-		if( pvFrame!=NULL )
+		uiLinkState = ptNetworkIf->pfnGetLinkStatus(NULL);
+		if( uiLinkState==0 )
 		{
-			/* Allocate a buffer from the pool. */
-			usPacketSize = (unsigned short)(sizFrame);
-			ptPBuf = pbuf_alloc(PBUF_RAW, usPacketSize, PBUF_POOL);
-			if( ptPBuf==NULL )
+			/* TODO: Move to an error state. */
+			uprintf("The link is down.\n");
+			netif_set_link_down(ptNetIf);
+		}
+		else
+		{
+			/* Check for received frames, feed them to lwIP */
+			pvFrame = ptNetworkIf->pfnGetReceivedPacket(&sizFrame, NULL);
+			if( pvFrame!=NULL )
 			{
-				ptNetworkIf->pfnReleasePacket(pvFrame, NULL);
-			}
-			else
-			{
-				/* Copy the Ethernet frame into the buffer. */
-				pbuf_take(ptPBuf, pvFrame, usPacketSize);
-
-				ptNetworkIf->pfnReleasePacket(pvFrame, NULL);
-
-				tResult = ptNetIf->input(ptPBuf, ptNetIf);
-				if( tResult!=ERR_OK)
+				/* Allocate a buffer from the pool. */
+				usPacketSize = (unsigned short)(sizFrame);
+				ptPBuf = pbuf_alloc(PBUF_RAW, usPacketSize, PBUF_POOL);
+				if( ptPBuf==NULL )
 				{
-					pbuf_free(ptPBuf);
+					ptNetworkIf->pfnReleasePacket(pvFrame, NULL);
+				}
+				else
+				{
+					/* Copy the Ethernet frame into the buffer. */
+					pbuf_take(ptPBuf, pvFrame, usPacketSize);
+
+					ptNetworkIf->pfnReleasePacket(pvFrame, NULL);
+
+					tResult = ptNetIf->input(ptPBuf, ptNetIf);
+					if( tResult!=ERR_OK)
+					{
+						pbuf_free(ptPBuf);
+					}
 				}
 			}
 		}
-	}
 
-	/* Cyclic lwIP timers check */
-	sys_check_timeouts();
+		/* Cyclic lwIP timers check */
+		sys_check_timeouts();
+	}
 }
 
 

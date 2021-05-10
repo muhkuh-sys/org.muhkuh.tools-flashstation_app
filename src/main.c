@@ -302,6 +302,7 @@ void flashapp_main(void)
 
 	systime_init();
 	uart_standalone_initialize();
+	network_init();
 
 	uprintf("\f. *** Flasher APP by doc_bacardi@users.sourceforge.net ***\n");
 	uprintf("V" VERSION_ALL "\n\n");
