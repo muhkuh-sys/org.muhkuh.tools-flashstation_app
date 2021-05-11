@@ -321,7 +321,7 @@ static void httpDownloadResultCallback(void *pvUser, httpc_result_t httpc_result
 		}
 
 		/* Only finish the hash if the download was successful. */
-		if( httpc_result==HTTPC_RESULT_OK )
+		if( httpc_result==HTTPC_RESULT_OK && srv_res==200 && err==ERR_OK )
 		{
 			sha384_finalize_byte(&(ptHttpState->tHash), rx_content_len);
 		}
@@ -378,8 +378,7 @@ err_t httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigned char 
 		/* Get the system time in ms. */
 		ulTimeEnd = systime_get_ms();
 		uprintf("Download finished after %dms: %d %d %d\n", ulTimeEnd-ulTimeStart, tHttpDownload.tHttpcResult, tHttpDownload.ulServerResponse, tHttpDownload.tResult);
-		tResult = tHttpDownload.tResult;
-		if( tResult==ERR_OK )
+		if( tHttpDownload.tHttpcResult==HTTPC_RESULT_OK && tHttpDownload.ulServerResponse==200 && tHttpDownload.tResult==ERR_OK )
 		{
 			if( psizDownloaded!=NULL )
 			{
