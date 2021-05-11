@@ -198,7 +198,6 @@ static int getDeviceInfo(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo
 	unsigned long ulHardwareRevision;
 	unsigned long ulDeviceNumberHi;
 	unsigned long ulDeviceNumberLo;
-	err_t tResult;
 	unsigned int uiDownloadSize;
 	int iResult;
 	char acUri[32];
@@ -225,15 +224,14 @@ static int getDeviceInfo(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo
 	memset(uInfoBuffer.auc, 0, sizeof(uInfoBuffer));
 
 	/* Download the file. */
-	tResult = httpDownload(ptServerIpAddr, acUri, uInfoBuffer.auc, sizeof(uInfoBuffer), &uiDownloadSize, NULL);
-	if( tResult==ERR_OK )
+	iResult = httpDownload(ptServerIpAddr, acUri, uInfoBuffer.auc, sizeof(uInfoBuffer), &uiDownloadSize, NULL);
+	if( iResult==0 )
 	{
 		iResult = parseInfoFile(uInfoBuffer.ac, uiDownloadSize, ptDeviceInfo);
 	}
 	else
 	{
 		uprintf("Failed to load the info file.\n");
-		iResult = -1;
 	}
 
 	return iResult;
@@ -247,11 +245,8 @@ static int getDataFile(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo)
 	unsigned char *pucBuffer;
 	unsigned int sizBuffer;
 	unsigned int uiDownloadSize;
-	err_t tResult;
 	SHA384_T tMyHash;
 
-
-	iResult = -1;
 
 	uprintf("Reading data file '%s' with the expected hash:\n", ptDeviceInfo->acDataUri);
 	hexdump(ptDeviceInfo->tHash.auc, sizeof(SHA384_T));
@@ -259,8 +254,8 @@ static int getDataFile(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo)
 	/* Load the info file with TFTP. Use the DDR as a buffer. */
 	pucBuffer = (unsigned char*)0x40000000U;
 	sizBuffer = 0x40000000U;
-	tResult = httpDownload(ptServerIpAddr, ptDeviceInfo->acDataUri, pucBuffer, sizBuffer, &uiDownloadSize, &tMyHash);
-	if( tResult==ERR_OK )
+	iResult = httpDownload(ptServerIpAddr, ptDeviceInfo->acDataUri, pucBuffer, sizBuffer, &uiDownloadSize, &tMyHash);
+	if( iResult==0 )
 	{
 		/* Compare the hash. */
 		if( memcmp(&tMyHash, &(ptDeviceInfo->tHash), sizeof(SHA384_T))==0 )
@@ -276,6 +271,7 @@ static int getDataFile(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo)
 		else
 		{
 			uprintf("The hash of the received file does not match the value in the info file.\n");
+			iResult = -1;
 		}
 	}
 	else

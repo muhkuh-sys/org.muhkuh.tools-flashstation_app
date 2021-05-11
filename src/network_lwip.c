@@ -335,8 +335,9 @@ static void httpDownloadResultCallback(void *pvUser, httpc_result_t httpc_result
 
 
 
-err_t httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigned char *pucBuffer, unsigned int sizBuffer, unsigned int *psizDownloaded, SHA384_T *ptHash)
+int httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigned char *pucBuffer, unsigned int sizBuffer, unsigned int *psizDownloaded, SHA384_T *ptHash)
 {
+	int iResult;
 	err_t tResult;
 	httpc_state_t *ptConnection;
 	unsigned long ulTimeStart;
@@ -344,6 +345,8 @@ err_t httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigned char 
 	httpc_connection_t tHttpConnection;
 	HTTP_DOWNLOAD_STATE_T tHttpDownload;
 
+
+	iResult = -1;
 
 	tHttpDownload.pucStart = pucBuffer;
 	tHttpDownload.pucCnt = pucBuffer;
