@@ -14,9 +14,6 @@ int readFDL(DEVICE_INFO_T *ptDeviceInfo)
 	int iResult;
 	unsigned long ulOffset;
 	unsigned long ulCrc;
-	unsigned long ulDeviceNr;
-	unsigned char ucHwRev;
-	unsigned long ulSerial;
 	NETX_CONSOLEAPP_RESULT_T tResult;
 	DEVICE_DESCRIPTION_T tDeviceDesc;
 	FLASHER_SPI_CONFIGURATION_T tSpiConfig;
@@ -80,13 +77,10 @@ int readFDL(DEVICE_INFO_T *ptDeviceInfo)
 				}
 				else
 				{
-					ulDeviceNr = tBuf.t.tData.t.tBasicDeviceData.ulDeviceNumber;
-					ucHwRev = tBuf.t.tData.t.tBasicDeviceData.ucHardwareRevisionNumber;
-					ulSerial = tBuf.t.tData.t.tBasicDeviceData.ulSerialNumber;
-
-					ptDeviceInfo->ulDeviceNr = ulDeviceNr;
-					ptDeviceInfo->ulHwRev = ucHwRev;
-					ptDeviceInfo->ulSerial = ulSerial;
+					ptDeviceInfo->ulManufacturer = tBuf.t.tData.t.tBasicDeviceData.usManufacturerID;
+					ptDeviceInfo->ulDeviceNr = tBuf.t.tData.t.tBasicDeviceData.ulDeviceNumber;
+					ptDeviceInfo->ulHwRev = tBuf.t.tData.t.tBasicDeviceData.ucHardwareRevisionNumber;
+					ptDeviceInfo->ulSerial = tBuf.t.tData.t.tBasicDeviceData.ulSerialNumber;
 
 					iResult = 0;
 				}

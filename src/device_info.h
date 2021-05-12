@@ -9,6 +9,7 @@ typedef struct DEVICE_INFO_STRUCT
 	/* These fields are filled with data from the FDL.
 	 * They are necessary to retrieve the correct files from the server.
 	 */
+	unsigned long ulManufacturer;
 	unsigned long ulDeviceNr;
 	unsigned long ulHwRev;
 	unsigned long ulSerial;
