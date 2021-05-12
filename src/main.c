@@ -18,7 +18,8 @@
 /*-------------------------------------------------------------------------*/
 
 
-#if 0
+typedef int (*PFN_ROM_TFTP_SEND_ACK_T) (void);
+
 /* Send an ACK for the last TFTP packet. */
 static int ackLastRomcodePacket(void)
 {
@@ -39,7 +40,6 @@ static int ackLastRomcodePacket(void)
 
 	return iResult;
 }
-#endif
 
 
 
