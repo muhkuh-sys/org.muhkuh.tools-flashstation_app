@@ -336,6 +336,9 @@ void flashapp_main(void)
 #else
 	/* This should be used with a JTAG debugger. */
 	iResult = 0;
+
+	/* Set the server IP. */
+	IP4_ADDR(&tServerIpAddr, 192, 168, 64, 1);
 #endif
 	{
 		/* Read the FDL structure and extract the device number, the hardware
@@ -355,10 +358,7 @@ void flashapp_main(void)
 			setupHardware(&tDeviceInfo);
 
 			uprintf("Initializing network...\n");
-			setupNetwork();
-
-			/* FIXME: get the server address from... somewhere. */
-			IP4_ADDR(&tServerIpAddr, 192,168,2,118);
+			setupNetwork(&tServerIpAddr);
 
 			uprintf("Reading the device info file.\n");
 			iResult = getDeviceInfo(&tServerIpAddr, &tDeviceInfo);

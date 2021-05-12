@@ -111,10 +111,11 @@ static err_t initialize_interface(struct netif *ptNetIf)
 
 
 
-int setupNetwork(void)
+int setupNetwork(ip4_addr_t *ptServerIpAddr)
 {
 	int iResult;
 	const ETHERNET_CONFIGURATION_T *ptRomEthernetConfiguration = (const ETHERNET_CONFIGURATION_T*)0x00024a88U;
+	unsigned long ulTftpIp;
 	unsigned long ulGw;
 	unsigned long ulIp;
 	unsigned long ulNm;
@@ -123,57 +124,81 @@ int setupNetwork(void)
 	const NETWORK_IF_T *ptNetworkIf;
 
 
-	iResult = -1;
+	iResult = 0;
 
-	ptNetworkIf = drv_eth_xc_initialize(0);
-	if( ptNetworkIf!=NULL )
+	/* Is the server address set already? */
+	if( ptServerIpAddr->addr==0 )
 	{
-		ulGw = ptRomEthernetConfiguration->ulGatewayIp;
-		ulIp = ptRomEthernetConfiguration->ulIp;
-		ulNm = ptRomEthernetConfiguration->ulNetmask;
+		/* No -> Get the address from the ROM loader.
+		 * The ROM receives this code from a TFTP server, and has already an IP of the TFTP server.
+		 * All other services should be on the same machine.
+		 */
+		ulTftpIp = ptRomEthernetConfiguration->ulTftpIp;
+		if( ulTftpIp==0U )
+		{
+			uprintf("No TFTP server IP set.\n");
+			iResult = -1;
+		}
+		else
+		{
+			IP4_ADDR(ptServerIpAddr, ulTftpIp&0xff, (ulTftpIp>> 8U) & 0xffU, (ulTftpIp>>16U) & 0xffU, (ulTftpIp>>24U) & 0xffU);
+		}
+	}
 
-		uprintf("IP: %d.%d.%d.%d\n",
-			ulIp&0xff,
-			(ulIp>> 8U) & 0xffU,
-			(ulIp>>16U) & 0xffU,
-			(ulIp>>24U) & 0xffU
-		);
-		uprintf("NM: %d.%d.%d.%d\n",
-			ulNm&0xff,
-			(ulNm>> 8U) & 0xffU,
-			(ulNm>>16U) & 0xffU,
-			(ulNm>>24U) & 0xffU
-		);
-		uprintf("GW: %d.%d.%d.%d\n",
-			ulGw&0xff,
-			(ulGw>> 8U) & 0xffU,
-			(ulGw>>16U) & 0xffU,
-			(ulGw>>24U) & 0xffU
-		);
-		hexdump(ptRomEthernetConfiguration->aucMac, 6);
+	if( iResult==0 )
+	{
+		ptNetworkIf = drv_eth_xc_initialize(0);
+		if( ptNetworkIf==NULL )
+		{
+			iResult = -1;
+		}
+		else
+		{
+			ulGw = ptRomEthernetConfiguration->ulGatewayIp;
+			ulIp = ptRomEthernetConfiguration->ulIp;
+			ulNm = ptRomEthernetConfiguration->ulNetmask;
 
-		IP4_ADDR(&(tNetworkDeviceState.tIpAddr),  ulIp&0xff, (ulIp>> 8U) & 0xffU, (ulIp>>16U) & 0xffU, (ulIp>>24U) & 0xffU);
-		IP4_ADDR(&(tNetworkDeviceState.tGateway), ulGw&0xff, (ulGw>> 8U) & 0xffU, (ulGw>>16U) & 0xffU, (ulGw>>24U) & 0xffU);
-		IP4_ADDR(&(tNetworkDeviceState.tNetmask), ulNm&0xff, (ulNm>> 8U) & 0xffU, (ulNm>>16U) & 0xffU, (ulNm>>24U) & 0xffU);
-		memcpy(tNetworkDeviceState.aucMAC, ptRomEthernetConfiguration->aucMac, 6);
+			uprintf("IP: %d.%d.%d.%d\n",
+				ulIp&0xff,
+				(ulIp>> 8U) & 0xffU,
+				(ulIp>>16U) & 0xffU,
+				(ulIp>>24U) & 0xffU
+			);
+			uprintf("NM: %d.%d.%d.%d\n",
+				ulNm&0xff,
+				(ulNm>> 8U) & 0xffU,
+				(ulNm>>16U) & 0xffU,
+				(ulNm>>24U) & 0xffU
+			);
+			uprintf("GW: %d.%d.%d.%d\n",
+				ulGw&0xff,
+				(ulGw>> 8U) & 0xffU,
+				(ulGw>>16U) & 0xffU,
+				(ulGw>>24U) & 0xffU
+			);
+			hexdump(ptRomEthernetConfiguration->aucMac, 6);
 
-		tNetworkDeviceState.ptNetworkIf = ptNetworkIf;
+			IP4_ADDR(&(tNetworkDeviceState.tIpAddr),  ulIp&0xff, (ulIp>> 8U) & 0xffU, (ulIp>>16U) & 0xffU, (ulIp>>24U) & 0xffU);
+			IP4_ADDR(&(tNetworkDeviceState.tGateway), ulGw&0xff, (ulGw>> 8U) & 0xffU, (ulGw>>16U) & 0xffU, (ulGw>>24U) & 0xffU);
+			IP4_ADDR(&(tNetworkDeviceState.tNetmask), ulNm&0xff, (ulNm>> 8U) & 0xffU, (ulNm>>16U) & 0xffU, (ulNm>>24U) & 0xffU);
+			memcpy(tNetworkDeviceState.aucMAC, ptRomEthernetConfiguration->aucMac, 6);
 
-		lwip_init();
+			tNetworkDeviceState.ptNetworkIf = ptNetworkIf;
 
-		ptNetIf = &(tNetworkDeviceState.tNetIf);
-		pvUser = (void*)&tNetworkDeviceState;
-		netif_add(ptNetIf, &(tNetworkDeviceState.tIpAddr), &(tNetworkDeviceState.tNetmask), &(tNetworkDeviceState.tGateway), pvUser, initialize_interface, netif_input);
-		ptNetIf->name[0] = 'e';
-		ptNetIf->name[1] = '0';
+			lwip_init();
 
-		netif_set_default(ptNetIf);
-		netif_set_up(ptNetIf);
+			ptNetIf = &(tNetworkDeviceState.tNetIf);
+			pvUser = (void*)&tNetworkDeviceState;
+			netif_add(ptNetIf, &(tNetworkDeviceState.tIpAddr), &(tNetworkDeviceState.tNetmask), &(tNetworkDeviceState.tGateway), pvUser, initialize_interface, netif_input);
+			ptNetIf->name[0] = 'e';
+			ptNetIf->name[1] = '0';
 
-		/* The link is already up at this point. */
-		netif_set_link_up(ptNetIf);
+			netif_set_default(ptNetIf);
+			netif_set_up(ptNetIf);
 
-		iResult = 0;
+			/* The link is already up at this point. */
+			netif_set_link_up(ptNetIf);
+		}
 	}
 
 	return iResult;
