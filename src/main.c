@@ -283,6 +283,72 @@ static int getDataFile(ip4_addr_t *ptServerIpAddr, DEVICE_INFO_T *ptDeviceInfo)
 }
 
 
+
+static void generateStartMessage(DEVICE_INFO_T *ptDeviceInfo, ip4_addr_t *ptServerIpAddr, unsigned short usServerPort, const char *pcId)
+{
+	unsigned int uiMessageSize;
+	char acMessage[1024];
+
+
+	uiMessageSize = usnprintf(
+		acMessage, sizeof(acMessage),
+		"%s,%d,%d,%d,%d\n",
+		pcId,
+		ptDeviceInfo->ulManufacturer,
+		ptDeviceInfo->ulDeviceNr,
+		ptDeviceInfo->ulHwRev,
+		ptDeviceInfo->ulSerial
+	);
+	sendMessage(ptServerIpAddr, usServerPort, acMessage, uiMessageSize);
+}
+
+
+
+static void generateEndMessage(DEVICE_INFO_T *ptDeviceInfo, ip4_addr_t *ptServerIpAddr, unsigned short usServerPort, const char *pcId, int iResult, const char *pcMessage, unsigned long ulDuration)
+{
+	unsigned int uiMessageSize;
+	char acMessage[1024];
+
+
+	uiMessageSize = usnprintf(
+		acMessage, sizeof(acMessage),
+		"%s,%d,%d,%d,%d,%s,%d,%s\n",
+		pcId,
+		ptDeviceInfo->ulManufacturer,
+		ptDeviceInfo->ulDeviceNr,
+		ptDeviceInfo->ulHwRev,
+		ptDeviceInfo->ulSerial,
+		(iResult==0)?"true":"false",
+		ulDuration,
+		pcMessage
+	);
+	sendMessage(ptServerIpAddr, usServerPort, acMessage, uiMessageSize);
+}
+
+
+
+static void generateResultMessage(DEVICE_INFO_T *ptDeviceInfo, ip4_addr_t *ptServerIpAddr, unsigned short usServerPort, int iResult, const char *pcMessage, unsigned long ulDurationDownload, unsigned long ulDurationFlash)
+{
+	unsigned int uiMessageSize;
+	char acMessage[1024];
+
+
+	uiMessageSize = usnprintf(
+		acMessage, sizeof(acMessage),
+		"RESULT,%d,%d,%d,%d,%s,%d,%d,%s\n",
+		ptDeviceInfo->ulManufacturer,
+		ptDeviceInfo->ulDeviceNr,
+		ptDeviceInfo->ulHwRev,
+		ptDeviceInfo->ulSerial,
+		(iResult==0)?"true":"false",
+		ulDurationDownload,
+		ulDurationFlash,
+		pcMessage
+	);
+	sendMessage(ptServerIpAddr, usServerPort, acMessage, uiMessageSize);
+}
+
+
 /*-------------------------------------------------------------------------*/
 
 UART_STANDALONE_DEFINE_GLOBALS
@@ -296,6 +362,11 @@ void flashapp_main(void)
 	unsigned long ulBlinkState;
 	DEVICE_INFO_T tDeviceInfo;
 	ip4_addr_t tServerIpAddr;
+	const unsigned short usMessagePort = 5555;
+	unsigned long ulTimeStart;
+	unsigned long ulDurationDownload;
+	unsigned long ulDurationFlash;
+	const char *pcErrorMessage;
 
 
 	systime_init();
@@ -308,6 +379,10 @@ void flashapp_main(void)
 
 	/* Switch all LEDs off. */
 	rdy_run_setLEDs(RDYRUN_OFF);
+
+	pcErrorMessage = "OK";
+	ulDurationDownload = 0;
+	ulDurationFlash = 0;
 
 	/* The final application will be downloaded and started by the netX4000
 	 * ROM code. The ROM has the limitation that it does not know when a boot
@@ -361,11 +436,18 @@ void flashapp_main(void)
 			setupNetwork(&tServerIpAddr);
 
 			uprintf("Reading the device info file.\n");
+			generateStartMessage(&tDeviceInfo, &tServerIpAddr, usMessagePort, "DOWNLOAD_START");
+			ulTimeStart = systime_get_ms();
 			iResult = getDeviceInfo(&tServerIpAddr, &tDeviceInfo);
 			if( iResult!=0 )
 			{
+				pcErrorMessage = "Failed to download the device info.";
+
 				ulBlinkMask = BLINKI_M_DOWNLOAD_DEVICEINFO_FAILED;
 				ulBlinkState = BLINKI_S_DOWNLOAD_DEVICEINFO_FAILED;
+
+				ulDurationDownload = (unsigned long)(systime_get_ms() - ulTimeStart);
+				generateEndMessage(&tDeviceInfo, &tServerIpAddr, usMessagePort, "DOWNLOAD_END", -1, pcErrorMessage, ulDurationDownload);
 			}
 			else
 			{
@@ -374,11 +456,21 @@ void flashapp_main(void)
 				iResult = getDataFile(&tServerIpAddr, &tDeviceInfo);
 				if( iResult!=0 )
 				{
+					pcErrorMessage = "Failed to download the SWFP.";
+
 					ulBlinkMask = BLINKI_M_DOWNLOAD_SWFP_FAILED;
 					ulBlinkState = BLINKI_S_DOWNLOAD_SWFP_FAILED;
+
+					ulDurationDownload = (unsigned long)(systime_get_ms() - ulTimeStart);
+					generateEndMessage(&tDeviceInfo, &tServerIpAddr, usMessagePort, "DOWNLOAD_END", -1, pcErrorMessage, ulDurationDownload);
 				}
 				else
 				{
+					ulDurationDownload = (unsigned long)(systime_get_ms() - ulTimeStart);
+					generateEndMessage(&tDeviceInfo, &tServerIpAddr, usMessagePort, "DOWNLOAD_END", 0, "OK", ulDurationDownload);
+
+					generateStartMessage(&tDeviceInfo, &tServerIpAddr, usMessagePort, "FLASH_START");
+					ulTimeStart = systime_get_ms();
 					iResult = processWfp(&tDeviceInfo);
 					if( iResult==0 )
 					{
@@ -386,16 +478,24 @@ void flashapp_main(void)
 
 						ulBlinkMask = BLINKI_M_FLASHING_OK;
 						ulBlinkState = BLINKI_S_FLASHING_OK;
+
+						ulDurationFlash = (unsigned long)(systime_get_ms() - ulTimeStart);
+						generateEndMessage(&tDeviceInfo, &tServerIpAddr, usMessagePort, "FLASH_END", 0, "OK", ulDurationFlash);
 					}
 					else
 					{
-						uprintf("Failed to flash the WFP.\n");
+						pcErrorMessage = "Failed to flash the SWFP.";
 
 						ulBlinkMask = BLINKI_M_FLASHING_FAILED;
 						ulBlinkState = BLINKI_S_FLASHING_FAILED;
+
+						ulDurationFlash = (unsigned long)(systime_get_ms() - ulTimeStart);
+						generateEndMessage(&tDeviceInfo, &tServerIpAddr, usMessagePort, "FLASH_END", -1, pcErrorMessage, ulDurationFlash);
 					}
 				}
 			}
+
+			generateResultMessage(&tDeviceInfo, &tServerIpAddr, usMessagePort, iResult, pcErrorMessage, ulDurationDownload, ulDurationFlash);
 
 			rdy_run_blinki_init(&tBlinkiHandle, ulBlinkMask, ulBlinkState);
 			while(1)
