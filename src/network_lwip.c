@@ -417,7 +417,7 @@ int httpDownload(ip4_addr_t *ptServerIpAddr, const char *pcUri, unsigned char *p
 				memcpy(ptHash, &(tHttpDownload.tHash), sizeof(SHA384_T));
 			}
 
-			iResult = -1;
+			iResult = 0;
 		}
 	}
 
