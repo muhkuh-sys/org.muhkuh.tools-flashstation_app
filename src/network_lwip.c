@@ -492,6 +492,7 @@ int sendMessage(ip4_addr_t *ptServerIpAddr, unsigned short usServerPort, const v
 {
 	int iResult;
 	err_t tResult;
+	err_t tCloseResult;
 	struct tcp_pcb *ptPcb;
 	const unsigned char *pucCnt;
 	const unsigned char *pucEnd;
@@ -620,23 +621,15 @@ int sendMessage(ip4_addr_t *ptServerIpAddr, unsigned short usServerPort, const v
 				}
 			}
 
-			if( tResult==ERR_OK )
-			{
-				tResult = tcp_close(ptPcb);
-				if( tResult!=ERR_OK )
-				{
-					uprintf("Close failed: %d\n", tResult);
-				}
-			}
-
-			if( tResult==ERR_OK )
-			{
-				/* All ok. */
-				iResult = 0;
-			}
-			else
+			tCloseResult = tcp_close(ptPcb);
+			if( tCloseResult!=ERR_OK )
 			{
 				tcp_abort(ptPcb);
+				tResult = tCloseResult;
+			}
+			if( tResult==ERR_OK )
+			{
+				iResult = 0;
 			}
 		}
 	}
