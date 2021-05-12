@@ -157,6 +157,7 @@ int setupNetwork(ip4_addr_t *ptServerIpAddr)
 			ulGw = ptRomEthernetConfiguration->ulGatewayIp;
 			ulIp = ptRomEthernetConfiguration->ulIp;
 			ulNm = ptRomEthernetConfiguration->ulNetmask;
+			ulTftpIp = ptServerIpAddr->addr;
 
 			uprintf("IP: %d.%d.%d.%d\n",
 				ulIp&0xff,
@@ -176,6 +177,13 @@ int setupNetwork(ip4_addr_t *ptServerIpAddr)
 				(ulGw>>16U) & 0xffU,
 				(ulGw>>24U) & 0xffU
 			);
+			uprintf("Server: %d.%d.%d.%d\n",
+				ulTftpIp&0xff,
+				(ulTftpIp>> 8U) & 0xffU,
+				(ulTftpIp>>16U) & 0xffU,
+				(ulTftpIp>>24U) & 0xffU
+			);
+			uprintf("MAC:\n");
 			hexdump(ptRomEthernetConfiguration->aucMac, 6);
 
 			IP4_ADDR(&(tNetworkDeviceState.tIpAddr),  ulIp&0xff, (ulIp>> 8U) & 0xffU, (ulIp>>16U) & 0xffU, (ulIp>>24U) & 0xffU);
