@@ -8,6 +8,8 @@
 
 /* Set the memory alignment to 4. */
 #define MEM_ALIGNMENT 4U
+/* Reserve 64kof heap memory. */
+#define MEM_SIZE 65536
 
 /* TODO: is this needed for the HTTP client? */
 #define LWIP_ALTCP 1
