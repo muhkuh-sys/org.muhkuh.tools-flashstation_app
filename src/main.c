@@ -397,7 +397,7 @@ void flashapp_main(void)
 	 * debugger.
 	 */
 
-#if 0
+#if 1
 	/* Send the last ACK packet for the ROM transfer. */
 	iResult = ackLastRomcodePacket();
 	if( iResult!=0 )
