@@ -398,6 +398,9 @@ void flashapp_main(void)
 	 */
 
 #if 1
+	/* No static server IP set -> get it from the ROM. */
+	tServerIpAddr.addr = 0U;
+
 	/* Send the last ACK packet for the ROM transfer. */
 	iResult = ackLastRomcodePacket();
 	if( iResult!=0 )
