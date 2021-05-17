@@ -90,7 +90,7 @@ static int parseInfoFile(const char *pcBuffer, unsigned int sizBuffer, DEVICE_IN
 	uiLineSize = 0;
 	while( pcCnt<pcInfoEnd )
 	{
-		if( *pcCnt=='\n' )
+		if( (*pcCnt=='\r') || (*pcCnt=='\n') )
 		{
 			break;
 		}
@@ -113,7 +113,10 @@ static int parseInfoFile(const char *pcBuffer, unsigned int sizBuffer, DEVICE_IN
 			ptDeviceInfo->acDataUri[uiLineSize + 1U] = 0x00;
 
 			/* Skip the newline. */
-			++pcCnt;
+			while( pcCnt<pcInfoEnd && ((*pcCnt=='\r') || (*pcCnt=='\n')) )
+			{
+				++pcCnt;
+			}
 
 			/* Expect 96 hex digits. */
 			pucHash = ptDeviceInfo->tHash.auc;
