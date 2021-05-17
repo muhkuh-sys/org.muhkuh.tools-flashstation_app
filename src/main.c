@@ -338,11 +338,12 @@ static void generateResultMessage(DEVICE_INFO_T *ptDeviceInfo, ip4_addr_t *ptSer
 
 	uiMessageSize = usnprintf(
 		acMessage, sizeof(acMessage),
-		"RESULT,%d,%d,%d,%d,%s,%d,%d,%s\n",
+		"RESULT,%d,%d,%d,%d,%s,%s,%d,%d,%s\n",
 		ptDeviceInfo->ulManufacturer,
 		ptDeviceInfo->ulDeviceNr,
 		ptDeviceInfo->ulHwRev,
 		ptDeviceInfo->ulSerial,
+		ptDeviceInfo->acDataUri,
 		(iResult==0)?"true":"false",
 		ulDurationDownload,
 		ulDurationFlash,
