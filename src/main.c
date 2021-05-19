@@ -384,6 +384,7 @@ void flashapp_main(void)
 	/* Switch all LEDs off. */
 	rdy_run_setLEDs(RDYRUN_OFF);
 
+	memset(&tDeviceInfo, 0, sizeof(DEVICE_INFO_T));
 	pcErrorMessage = "OK";
 	ulDurationDownload = 0;
 	ulDurationFlash = 0;
