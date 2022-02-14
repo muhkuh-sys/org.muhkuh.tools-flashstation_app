@@ -13,6 +13,6 @@
 		</description>
 	</info>
 	<dependencies>
-		<build-dependency group="org.muhkuh.tools" module="flasher_pt" artifact="flasher" version="1.6.4"/>
+		<build-dependency group="org.muhkuh.tools" module="flasher_pt" artifact="flasher" version="1.7.1"/>
 	</dependencies>
 </jonchki-artifact>
